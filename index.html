@@ -85,7 +85,7 @@
     <div class="card">
       <h3>参数设置</h3>
       <div class="ctrl"><label>打板推荐数（最多）</label><input type="number" id="nLimit" value="3" min="1" max="6"></div>
-      <div class="ctrl"><label>非涨停潜力数（最多）</label><input type="number" id="nTrend" value="3" min="1" max="6"></div>
+      <div class="ctrl"><label>当日大涨潜力数（最多）</label><input type="number" id="nTrend" value="3" min="1" max="6"></div>
       <div class="ctrl"><label>自动刷新（分）</label>
         <select id="auto" style="width:90px;padding:5px;border:1px solid var(--line);border-radius:6px">
           <option value="0">关闭</option><option value="1">1</option>
@@ -120,7 +120,7 @@
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
     </div>
     <div class="group" id="gTrend">
-      <div class="ghead"><span class="t-blue">非涨停 · 上涨潜力</span><span class="tagc blue" id="cTrend">0 / 3</span></div>
+      <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 3</span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
     </div>
     <div class="card">
@@ -288,7 +288,7 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
   return [...first,...rest].slice(0,n).map(x=>x.s).filter(Boolean);
 }
 
-function buildTrendPicks(cands, klines, flows, n){ // 非涨停 → 上涨潜力
+function buildTrendPicks(cands, klines, flows, n){ // 非涨停 → 当天会大涨（强势拉升）
   const arr=cands;
   flows=flows||{};
   const score=(s)=>{
@@ -298,13 +298,19 @@ function buildTrendPicks(cands, klines, flows, n){ // 非涨停 → 上涨潜力
     const amount=+s.amount||0;
     const nmc=+s.nmc||0; // 万元
     const flow=flows[s.code]||0;
+    const chg=+s.changepercent||0; // 当日当前涨幅（核心：当天大涨）
+    const lim=detectLimitPct(s.name);
     let sc=0;
-    sc+=Math.min(Math.log10(vr+1)/1.1,1)*24;   // 今日放量（量能分析，课程31/32）
-    sc+=Math.min(hs/20,1)*17;                  // 换手人气
-    sc+=Math.log10(amount+1)/12.5*13;          // 成交额资金参与
-    sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*11; // 小流通市值弹性（低吸）
-    if(flow>0)sc+=Math.min(flow/5e8,1)*12;     // 主力净流入（跟随资金，核心）
-    if(km){sc+=Math.min(Math.max(km.chg5,0),30)/30*10; if(km.chg5>40)sc-=10;} // 5日动量但避免追高
+    sc+=Math.min(Math.max(chg,0)/(lim*0.9),1)*20;  // 当前涨幅（回测：纯追当日涨幅易回撤，降权）
+    sc+=Math.min(Math.log10(vr+1)/1.1,1)*26;       // 当日放量确认（量能，课程31/32）
+    sc+=Math.min(hs/20,1)*14;                      // 换手人气
+    sc+=Math.log10(amount+1)/12.5*9;               // 成交额资金参与
+    sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*8;    // 小流通市值弹性（低吸）
+    if(flow>0)sc+=Math.min(flow/5e8,1)*10;         // 主力净流入
+    if(km)sc+=Math.min(Math.max(km.chg5,0),30)/30*18; // 5日动量（回测：低开+强动量更易拿≥7%，加码）
+    if(km&&km.chg5>45)sc-=15;                      // 短期涨幅过陡追高惩罚
+    if(vr<1)sc-=6;                                 // 未放量降权
+    if(chg<0)sc-=15;                               // 走弱降权
     return sc;
   };
   const scaled=arr.map(s=>({s,sc:score(s)}));
@@ -396,7 +402,7 @@ function pickCard(p, rank, isLimit, km){
     parts.push(`换手${fmtW(+p.hs)}%、流通市值${fmtW_b(p.ltsz)}亿，${(+p.hs||0)>25?'分歧偏大注意承接':'人气较健康'}。`);
   }else{
     const vr=km?km.vr:NaN;
-    parts.push(`<b>模式要点·量+人气：</b>今日涨${pct}% 未涨停，留有上涨空间；`);
+    parts.push(`<b>模式要点·当天大涨：</b>今日现涨${pct}% 强势拉升、未涨停，有望当日继续冲高；`);
     if(km&&isFinite(vr))parts.push(`量比${fmtW(vr)}、${vr>=1.5?'明显放量，资金进场（课程31/32 跟随资金）':'量能一般'}；`);
     parts.push(`换手${fmtW(+p.turnoverratio)}%、成交${fmtW_b(p.amount)}亿，人气与资金为${(+p.turnoverratio||0)>6?'活跃':'中上'}；`);
     if(p.flow){parts.push(`今日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'主力加仓，跟随资金（课程31/32）':'主力净流出，谨慎接力'}；`);}
@@ -512,13 +518,13 @@ async function run(){
     $('#cLimit').textContent=limitPicks.length+' / '+nLimit;
     $('#pLimit').innerHTML=limitPicks.length?limitPicks.map((p,i)=>pickCard(p,i+1,true,klines[p.code])).join(''):'<div class="empty">今日无符合条件的打板主板票</div>';
     $('#cTrend').textContent=trendPicks.length+' / '+nTrend;
-    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">暂无符合条件的潜力票</div>';
+    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">暂无当日强势大涨票</div>';
     $('#cAuction').textContent=auctionPicks.length+' / 2';
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的竞价冲板票</div>';
     $('#why').innerHTML=guideText();
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
 
-    setStatus(`完成 · 打板<b>${limitPicks.length}</b> + 潜力<b>${trendPicks.length}</b> + 竞价冲板<b>${auctionPicks.length}</b>，合计≤12。`,'ok');
+    setStatus(`完成 · 打板<b>${limitPicks.length}</b> + 当日大涨<b>${trendPicks.length}</b> + 竞价冲板<b>${auctionPicks.length}</b>，合计≤12。`,'ok');
   }catch(e){
     setStatus('执行失败：'+e.message,'bad');
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
@@ -530,7 +536,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nLimit').value||3}只打板推荐</b>（首板优先，不足连板补）+ <b>${$('#nTrend').value||3}只非涨停潜力</b>，另有<b>2只竞价可能涨停</b>，总数 ≤7。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nLimit').value||3}只打板推荐</b>（首板优先，不足连板补）+ <b>${$('#nTrend').value||3}只当日大涨</b>（强势拉升，非涨停），另有<b>2只竞价可能涨停</b>，总数 ≤7。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
