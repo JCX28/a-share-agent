@@ -198,22 +198,34 @@ const fmtB=(v)=>{const b=v/1e8; return b>=100?b.toFixed(1):b>=10?b.toFixed(2):b.
 const fmtW=(v)=>typeof v==='number'?v.toFixed(2):'-';
 const isMainBoard=(code)=>/^(600|601|603|605|000|001|002)\d{3}$/.test(code); // 排除 300/301 创业板、688/689 科创板、8xx/4xx 北交所
 
-/* JSONP 加载器（绕过 CORS） */
-function jsonp(url, key='cb', timeout=15000){
+/* JSONP 加载器（绕过 CORS）。网关开启时优先走网关（经网关做CORS出口），失败自动降级直连 */
+function jsonp(u, key='cb', timeout=15000){
   return new Promise((resolve,reject)=>{
     const cb='cb'+Math.random().toString(36).slice(2,10);
-    const s=document.createElement('script');
-    let done=false;
-    const t=setTimeout(()=>{cleanup();reject(new Error('超时: '+url));},timeout);
-    function cleanup(){if(!done){done=true;clearTimeout(t);delete window[cb];if(s.parentNode)s.remove();}}
-    window[cb]=(d)=>{cleanup();resolve(d);};
-    s.onerror=()=>{cleanup();reject(new Error('加载失败: '+url));};
-    s.src=url+'&'+key+'='+cb;
-    document.head.appendChild(s);
+    const upUrl=u+'&'+key+'='+cb;              // 先把回调拼进上游URL（网关需代理含回调的完整URL）
+    const urls=GW_CFG.off?[upUrl]:[PX(upUrl),upUrl]; // 默认：网关优先，直连兜底
+    let idx=0;
+    function tryNext(err){
+      if(idx>=urls.length){trigger(err||new Error('加载失败'));return;}
+      const s=document.createElement('script'); let done=false;
+      const t=setTimeout(()=>{done=true;if(s.parentNode)s.remove();tryNext(new Error('超时'));},timeout);
+      window[cb]=(d)=>{clearTimeout(t);done=true;if(s.parentNode)s.remove();delete window[cb];resolve(d);};
+      s.onerror=()=>{clearTimeout(t);if(!done){done=true;if(s.parentNode)s.remove();tryNext(new Error('加载失败'));}};
+      s.src=urls[idx];
+      document.head.appendChild(s); idx++;
+    }
+    function trigger(err){delete window[cb];reject(err);}
+    tryNext();
   });
 }
-/* fetch 带重试（用于腾讯K线） */
+/* fetch 带重试。网关开启时优先经网关（缓存+统一出口），失败自动降级直连 */
 async function fetchJson(url, tries=2){
+  if(GW_CFG.off)return fetchJsonRaw(url,tries);
+  // 网关：单次快速探测，失败立即降级直连（不睡眠），避免公开站点无网关时每个请求白白多等
+  try{const r=await fetch(PX(url));if(r.ok)return await r.json();}catch(e){}
+  return fetchJsonRaw(url,tries);
+}
+async function fetchJsonRaw(url, tries){
   for(let i=0;i<tries;i++){
     try{const r=await fetch(url);if(!r.ok)throw 0;return await r.json();}catch(e){if(i===tries-1)throw e;await new Promise(r=>setTimeout(r,600));}
   }
@@ -227,6 +239,11 @@ async function poolRange(start, end, conc, fn){
 }
 
 /* ================== 数据源 ================== */
+/* 本地数据网关：优先经 http://127.0.0.1:8126 统一出口（缓存+重试，解决 CORS/限流），失败自动降级直连。
+   可用 localStorage 关闭：gw_off='1'；改网关地址：gw='http://127.0.0.1:8126' */
+const GW_CFG=(()=>{try{return{base:(localStorage.getItem('gw')||'http://127.0.0.1:8126').trim(),off:localStorage.getItem('gw_off')==='1'};}catch(e){return{base:'http://127.0.0.1:8126',off:false};}})();
+const PX=(u)=>GW_CFG.off?u:(GW_CFG.base+'/proxy?u='+encodeURIComponent(u)+'&ttl=8');
+
 const SINA_BASE='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData';
 // 新浪返回纯 JSON 且带 CORS（Access-Control-Allow-Origin:*），用 fetch 解析
 async function fetchSinaAll(){
@@ -253,30 +270,27 @@ async function findTradingDay(){
 }
 
 function mt(code){return /^6\d{5}$/.test(code)?'sh':'sz';}
-async function fetchKlines(codes, n=12){
+async function fetchKlines(codes, n=12){ // 新浪日K：{day,open,high,low,close,volume}，升序(旧→新)；替代被WAF封的腾讯
   const out={};
   await poolRange(0, Math.max(0,codes.length-1), 7, async(i)=>{
     const c=codes[i];
     try{
       const ssym = mt(c)+c;
-      const j=await fetchJson(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${ssym},day,,,${n},qfq`,2);
-      const raw=(j&&j.data&&j.data[ssym])?(j.data[ssym]['qfqday']||j.data[ssym].day||null):null;
-      if(raw&&raw.length){
-        out[c]=raw.map(r=>({d:r[0],o:+r[1],c:+r[2],h:+r[3],l:+r[4],v:+r[5]}));
+      const j=await fetchJson(`https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol=${ssym}&scale=240&ma=no&datalen=${n}`,2);
+      if(Array.isArray(j)&&j.length){
+        out[c]=j.map(r=>({d:r.day,o:+r.open,c:+r.close,h:+r.high,l:+r.low,v:+r.volume}));
       }
     }catch(e){}
   });
   return out;
 }
-async function fetchMainFlow(codes){ // 东方财富资金流日K，末行为主力净流入
+async function fetchMainFlow(codes){ // 新浪资金流：r0_net 为最近交易日主力净流入(元)；替代被封的东财push2
   const out={};
-  await poolRange(0, Math.max(0,codes.length-1), 8, async(i)=>{
+  await poolRange(0, Math.max(0,codes.length-1), 6, async(i)=>{
     const c=codes[i];
     try{
-      const mkt=/^6\d{5}$/.test(c)?1:0;
-      const j=await fetchJson(`https://push2.eastmoney.com/api/qt/stock/fflow/daykline/get?klt=101&secid=${mkt}.${c}&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57`,2);
-      const ks=(j&&j.data&&j.data.klines)||[];
-      if(ks.length){const last=ks[ks.length-1].split(','); out[c]=+last[1];} // 主力净流入(元)
+      const j=await fetchJson(`https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?page=1&num=1&sort=opendate&asc=0&daima=${mt(c)}${c}`,2);
+      if(Array.isArray(j)&&j.length&&j[0].r0_net!=null) out[c]=+j[0].r0_net; // 主力净流入(元)
     }catch(e){}
   });
   return out;
@@ -775,9 +789,9 @@ async function run(){
     const kNeed=Array.from(new Set([...limitCands,...trendCands,...auctionCands.map(s=>s.code)]));
     const klines=await fetchKlines(kNeed);
     const kc=Object.keys(klines).length;
-    src.push('<li><span class="ok">✓</span> 腾讯K线 <b>'+kc+'</b> 条（量比/均线/连板）</li>');
+    src.push('<li><span class="ok">✓</span> 新浪K线 <b>'+kc+'</b> 条（量比/均线/连板）</li>');
 
-    // 3.5) 主力净流入（东方财富资金流·仅取高分候选，降低请求量防限流）
+    // 3.5) 主力净流入（新浪资金流·仅取高分候选，降低请求量防限流）
     setStatus('正在拉取主力资金流…','');
     const flowCands=Array.from(new Set([...limitCands, ...trendShort.slice(0,14).map(s=>s.code), ...auctionCands.slice(0,14).map(s=>s.code)])).slice(0,34);
     const flows=await fetchMainFlow(flowCands);
@@ -785,7 +799,7 @@ async function run(){
     if(nf<10){
       src.push('<li><span class="bad">⚠</span> 主力净流入接口当前受限（'+nf+'/'+flowCands.length+'），数值显示“—”，自动刷新将重试</li>');
     }else{
-      src.push('<li><span class="ok">✓</span> 东方财富资金流 <b>'+nf+'</b> 只（主力净流入）</li>');
+      src.push('<li><span class="ok">✓</span> 新浪资金流 <b>'+nf+'</b> 只（主力净流入）</li>');
     }
 
     // 4) 选股
