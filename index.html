@@ -106,6 +106,7 @@
   <button class="hbtn run" id="btnRun">执行实时选股</button>
   <button class="hbtn" id="btnHelp">策略依据</button>
   <button class="hbtn" id="btnAnaly">个股分析</button>
+  <button class="hbtn" id="btnSnap">9:26快照</button>
 </header>
 
 <div id="app">
@@ -176,6 +177,16 @@
     <div class="card"><h3>我的关注 ★</h3><div id="anaWatch"><div class="empty">暂无关注</div></div></div>
     <div class="card"><h3>历史分析记录</h3><div id="anaHist"><div class="empty">暂无记录</div></div></div>
   </div>
+</div>
+
+<!-- 9:26 竞价快照存档 -->
+<div id="snapApp" style="display:none;padding:12px;max-width:1080px;margin:0 auto">
+  <div class="card" style="margin-bottom:12px">
+    <h3>每日 9:26 竞价快照存档</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动归档当日三组选股（打板/竞价/当日大涨），存于本机 localStorage、最多保留30日。盘中可手动补录：</div>
+    <button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:7px 16px" onclick="manualSnap()">立即存档当前选股</button>
+  </div>
+  <div class="card"><div id="snapList"><div class="empty">加载中…</div></div></div>
 </div>
 
 <div class="modal" id="helpModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:50;align-items:center;justify-content:center"></div>
@@ -811,6 +822,12 @@ async function run(){
     $('#why').innerHTML=guideText();
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
 
+    maybeSaveSnap({
+      limit:limitPicks.map(s=>({c:s.code,n:s.name})),
+      auction:auctionPicks.map(s=>({c:s.code,n:s.name})),
+      trend:trendPicks.map(s=>({c:s.code,n:s.name}))
+    });
+
     setStatus(`完成 · 打板<b>${limitPicks.length}</b> + 当日大涨<b>${trendPicks.length}</b> + 竞价冲板<b>${auctionPicks.length}</b>，合计≤12。`,'ok');
   }catch(e){
     setStatus('执行失败：'+e.message,'bad');
@@ -860,6 +877,7 @@ function toggleAnaly(){
   ana.style.display=anaView?'block':'none';
   $('#btnAnaly').style.background=anaView?'#fff':'';
   $('#btnAnaly').style.color=anaView?'#b91c1c':'';
+  if(snapView){snapView=false;$('#snapApp').style.display='none';$('#btnSnap').style.background='';$('#btnSnap').style.color='';}
   if(anaView){renderWatch();renderHist();renderHot();}
 }
 function searchAna(){
@@ -882,6 +900,74 @@ function showHot(){renderHot();}
 $('#btnAnaly')?.addEventListener('click',toggleAnaly);
 $('#anaSearch')?.addEventListener('keydown',e=>{if(e.key==='Enter')searchAna();});
 $('#anaSearch')?.addEventListener('input',()=>searchAna());
+
+/* 9:26 竞价快照存档 */
+let snapView=false;
+const SNAPKEY='ashare_snaps';
+let snapToday='';
+const pad2=n=>('0'+n).slice(-2);
+function todayKey(){const d=new Date();return ''+d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate());}
+function isTradingDay(d){const w=d.getDay();return w>=1&&w<=5;}
+function loadSnaps(){try{return JSON.parse(localStorage.getItem(SNAPKEY)||'[]')||[]}catch(e){return[]}}
+function saveSnaps(a){try{localStorage.setItem(SNAPKEY,JSON.stringify(a))}catch(e){}}
+function maybeSaveSnap(s){
+  const key=todayKey();
+  if(snapToday===key||loadSnaps().some(x=>x.date===key))return; // 今日已存档
+  const d=new Date(); const hm=d.getHours()*60+d.getMinutes();
+  if(!isTradingDay(d))return;
+  if(hm<9*60+20||hm>9*60+45)return; // 仅 9:20–9:45 自动归档竞价时段
+  const snap=Object.assign({date:key,t:pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds())},s);
+  const arr=loadSnaps(); arr.unshift(snap); if(arr.length>30)arr.length=30; saveSnaps(arr); snapToday=key;
+  if(snapView)renderSnaps();
+}
+function getGroupPicks(sel){
+  const out=[];
+  document.querySelectorAll(sel+' .pick').forEach(p=>{
+    const nm=p.querySelector('.nm'),cd=p.querySelector('.cd');
+    if(nm)out.push({c:cd?cd.textContent.trim():'',n:nm.textContent.trim()});
+  });
+  return out;
+}
+function manualSnap(){
+  const d=new Date();
+  const snap={date:todayKey(),t:pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()),
+    limit:getGroupPicks('#pLimit'), auction:getGroupPicks('#pAuction'), trend:getGroupPicks('#pTrend')};
+  const arr=loadSnaps().filter(x=>x.date!==todayKey()); arr.unshift(snap); if(arr.length>30)arr.length=30;
+  saveSnaps(arr); snapToday=todayKey(); renderSnaps();
+}
+function renderSnaps(){
+  const el=$('#snapList'); if(!el)return;
+  const arr=loadSnaps();
+  if(!arr.length){el.innerHTML='<div class="empty">暂无存档。交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动保存当日三组选股；非盘中可点上方按钮手动补录。</div>';return;}
+  const blk=(title,items)=>'<div style="margin:4px 0"><div style="font-size:11px;color:var(--muted)">'+title+'（'+(items?items.length:0)+'）</div>'+
+    (items&&items.length?items.map(x=>'<button class="sugbtn" onclick="analyzeByCode(\''+x.c+'\')">'+x.n+'</button>').join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>')+'</div>';
+  el.innerHTML=arr.map(sp=>'<div class="card" style="margin-bottom:10px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>'+sp.date+' <span style="color:var(--muted);font-size:12px">'+sp.t+'</span></b>'
+    +'<span style="color:var(--muted);font-size:11px">'+(sp.date===todayKey()?'今日':'历史')+'</span></div>'
+    +blk('打板推荐',sp.limit)+blk('竞价·可能涨停',sp.auction)+blk('当日大涨',sp.trend)
+    +'</div>').join('');
+}
+function toggleSnap(){
+  snapView=!snapView;
+  $('#app').style.display=snapView?'none':'grid';
+  $('#anaApp').style.display='none';
+  $('#btnAnaly').style.background=''; $('#btnAnaly').style.color='';
+  const sp=$('#snapApp');
+  sp.style.display=snapView?'block':'none';
+  $('#btnSnap').style.background=snapView?'#fff':'';
+  $('#btnSnap').style.color=snapView?'#b91c1c':'';
+  if(snapView)renderSnaps();
+}
+function snapHeartbeat(){
+  const d=new Date();
+  if(isTradingDay(d)){
+    const hm=d.getHours()*60+d.getMinutes(), key=todayKey();
+    if(snapToday!==key&&hm>=9*60+25&&hm<=9*60+40&&!loadSnaps().some(x=>x.date===key)){run();}
+  }
+  setTimeout(snapHeartbeat,45000);
+}
+$('#btnSnap')?.addEventListener('click',toggleSnap);
+snapHeartbeat();
 renderWatch();
 run();
 </script>
