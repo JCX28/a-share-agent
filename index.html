@@ -551,6 +551,8 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
     s.fund=z?z.fund:0; s.zbc=z?z.zbc:0; s.hybk=z?z.hybk:''; s.ltsz=z?z.ltsz:(s.nmc*1e4);
     s.hs=s.turnoverratio;
   }
+  // 炸板的股票不推荐：凡当天曾开板(涨停池炸板次数 zbc≥1，即炸板后回封/弱势)一律剔除出打板候选
+  for(let k=arr.length-1;k>=0;k--){ if((+arr[k].zbc||0)>=1)arr.splice(k,1); }
   // 板块热度（同一行业涨停家数）
   const hyCount={};
   arr.forEach(s=>{if(s.hybk){hyCount[s.hybk]=(hyCount[s.hybk]||0)+1;}});
@@ -558,7 +560,7 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
   flows=flows||{};
   const score=(s)=>{
     const lbc=+s.lbc||1; const fund=+s.fund||0; const hs=+s.hs||0;
-    const ltsz=+s.ltsz||1e10; const zbc=+s.zbc||0;
+    const ltsz=+s.ltsz||1e10;
     const km=klines[s.code]; // 放量确认用
     const flow=flows[s.code]||0;
     const hyBoost=hyCount[s.hybk]?hyCount[s.hybk]/maxHy:0;
@@ -573,7 +575,6 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
     sc+=Math.max(0,1-Math.log10(ltsz)/9.7)*13;   // 小市值弹性
     sc+=hyBoost*11;                              // 板块助力
     if(flow>0)sc+=Math.min(flow/5e8,1)*8;        // 主力净流入（资金认同）
-    sc-=Math.min(zbc,5)*3;                       // 炸板惩罚
     if(km){sc+=(km.vr>=1.2)?-4:4;}               // 量比反转：缩量强板(一字/秒)次日溢价高、放量烂板差（回测8）
     return {sc, lbc};
   };
