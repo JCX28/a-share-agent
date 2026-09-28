@@ -226,7 +226,7 @@ async function fetchSinaAll(){
   });
   for(const arr of res){if(Array.isArray(arr))pages.push(...arr);}
   const map=new Map();
-  for(const q of pages){ if(!q||!q.code)continue; if(!isMainBoard(q.code))continue; map.set(q.code,Object.assign({},q,{trade:+q.trade||0,changepercent:+q.changepercent||0,turnoverratio:+q.turnoverratio||0,amount:+q.amount||0,nmc:+q.nmc||0})); }
+  for(const q of pages){ if(!q||!q.code)continue; if(/ST/i.test(q.name||''))continue; if(!isMainBoard(q.code))continue; map.set(q.code,Object.assign({},q,{trade:+q.trade||0,changepercent:+q.changepercent||0,turnoverratio:+q.turnoverratio||0,amount:+q.amount||0,nmc:+q.nmc||0})); }
   return Array.from(map.values());
 }
 
