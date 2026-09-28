@@ -312,7 +312,7 @@ function klineMetrics(kl){
     if(r>=9.7){lbc++;}else if(r>=-9.7){break;}else{break;}
   }
   const yestChg=(kl.length>=3)?((kl[kl.length-2].c/kl[kl.length-3].c-1)*100):0; // 昨日涨幅（昨收可得，无前视）
-  return {price:last.c, vr, avg5v:avg5, ma5, ma10, chg5, lbc, vol:last.v, yestChg,
+  return {price:last.c, vr, ma5, ma10, chg5, lbc, vol:last.v, yestChg,
     broke5:last.c<ma5, broke10:last.c<ma10};
 }
 
@@ -563,9 +563,6 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
     const ltsz=+s.ltsz||1e10;
     const km=klines[s.code]; // 放量确认用
     const flow=flows[s.code]||0;
-    // 量比用实时快照今日量 ÷ K线前5日均量（K线为T+1口径，用实时量弥合当日；数值越界则回落K线量比防单位错配）
-    const sVol=+s.volume||0;
-    const vr=km?((sVol>0&&km.avg5v>0&&(sVol/km.avg5v)>0.02&&(sVol/km.avg5v)<60)?(sVol/km.avg5v):km.vr):1;
     const hyBoost=hyCount[s.hybk]?hyCount[s.hybk]/maxHy:0;
     const limit=detectLimitPct(s.name);
     let sc=0;
@@ -578,7 +575,7 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
     sc+=Math.max(0,1-Math.log10(ltsz)/9.7)*13;   // 小市值弹性
     sc+=hyBoost*11;                              // 板块助力
     if(flow>0)sc+=Math.min(flow/5e8,1)*8;        // 主力净流入（资金认同）
-    sc+=(vr>=1.2)?-4:4;                    // 量比反转：缩量强板(一字/秒)次日溢价高、放量烂板差（回测8）
+    if(km){sc+=(km.vr>=1.2)?-4:4;}               // 量比反转：缩量强板(一字/秒)次日溢价高、放量烂板差（回测8）
     return {sc, lbc};
   };
   const scaled=arr.map(s=>({s,sc:score(s).sc,lbc:+s.lbc||1}));
@@ -650,20 +647,18 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n){
     const km=klines[s.code]; const flow=flows[s.code]||0;
     const lim=detectLimitPct(s.name);
     const openGap=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0; // 集合竞价高开%（9:25 撮合价，9:26 可知，无前视）
-    // 量比用实时快照今日量 ÷ K线前5日均量（K线为T+1口径，用实时量弥合当日；数值越界则回落K线量比防单位错配）
-    const sVol=+s.volume||0;
-    const vr=km?((sVol>0&&km.avg5v>0&&(sVol/km.avg5v)>0.02&&(sVol/km.avg5v)<60)?(sVol/km.avg5v):km.vr):0;
+    const vr=km?km.vr:0;
     const hot=hotSector.has(s.hybk);
-    // 情绪交互（不做事后常数加分，否则对Top2排序无任何效果）：情绪越热对封板证据(高开距涨停/高开带/量比/动量)权重放大0.82~1.30
-    const auctAmp=0.7+(sentiment*0.6);
     let sc=0;
-    sc+=Math.min(Math.max(openGap,0)/lim,1)*34*auctAmp;          // 竞价撮合价高开距涨停（无前视主信号，回测：封板命中73% vs 高开基线16%）
-    sc+=(openGap>=2&&openGap<=8)?16*auctAmp:(openGap>0&&openGap<2)?(openGap/2)*9*auctAmp:(openGap>8&&openGap<10)?(22-(openGap-8)*4)*auctAmp:0; // 高开强度带(2~8%最佳)
-    sc+=(vr>=1.3&&vr<=3)?18*auctAmp:(vr>3)?28*auctAmp:(vr*8*auctAmp);            // 量比（竞价与打板相反：量比越高封板率越高，回测9：>3封板24.4%/开→收+1.38% 优于 1.2~3的8.5%/0.67%）
-    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/40,1)*18*auctAmp; // 前5日动量（竞价最强封板信号，回测9：chg5≥25封板52%、≥10封板30%，顶格18）
+    sc+=Math.min(Math.max(openGap,0)/lim,1)*34;          // 竞价撮合价高开距涨停（无前视主信号，回测：封板命中73% vs 高开基线16%）
+    sc+=(openGap>=2&&openGap<=8)?16:(openGap>0&&openGap<2)?(openGap/2)*9:(openGap>8&&openGap<10)?(22-(openGap-8)*4):0; // 高开强度带(2~8%最佳)
+    sc+=(vr>=1.3&&vr<=3)?18:(vr>3)?28:(vr*8);            // 量比（竞价与打板相反：量比越高封板率越高，回测9：>3封板24.4%/开→收+1.38% 优于 1.2~3的8.5%/0.67%）
+    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/40,1)*18; // 前5日动量（竞价最强封板信号，回测9：chg5≥25封板52%、≥10封板30%，顶格18）
     if(km&&km.yestChg>=lim*0.97)sc+=10;                 // 昨日涨停→今日高开接力（无前视；回测：连板次日+0.49% vs 首板-0.24%）
     if(flow>0)sc+=Math.min(flow/5e8,1)*12;              // 主力净流入
     if(hot)sc+=10;                                       // 热门板块加分
+    sc+=sentiment*8;                                     // 市场情绪加成
+    if(openGap<1.5)sc-=12;                               // 高开过小，距涨停太远
     if(vr<1)sc-=6;                                       // 未放量降权
     return {sc, openGap, vr};
   };
