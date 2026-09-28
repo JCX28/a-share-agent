@@ -640,9 +640,19 @@ function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
 }
 
 /* 竞价·可能涨停：结合集合竞价高开强度 + 市场情绪，推荐2只最可能冲击涨停的主板票 */
-function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n){
+function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap){
   flows=flows||{};
   if(!(hotSector instanceof Set))hotSector=new Set();
+  // 盘中炸板硬剔除（实时口径，不依赖涨停池zbc）：盘中最高已触及涨停、但当前已跌破涨停(炸板未回封)的票，一律剔除。
+  // 涨停池可能在收盘后才更新，用快照 high/settlement 当场判定最可靠。
+  cands=cands.filter(s=>{
+    if(!(+s.high&&+s.settlement))return true;
+    const lmt=detectLimitPct(s.name);
+    const touchedZT=((+s.high/+s.settlement-1)*100>=lmt*0.95-0.01);      // 盘中最高曾触及涨停
+    const nowBroken=((+s.changepercent||0)<lmt*0.95-0.01);               // 当前已跌破涨停
+    if(touchedZT&&nowBroken)return false;                                // 盘中炸板未回封 → 剔除
+    return true;
+  });
   const score=(s)=>{
     const km=klines[s.code]; const flow=flows[s.code]||0;
     const lim=detectLimitPct(s.name);
@@ -826,7 +836,7 @@ async function run(){
     }
     const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrend, sentiment);
     const limitPicks=buildLimitPicks(stocks, ztMap, klines, flows, nLimit);
-    const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, 2);
+    const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, 2, ztMap);
     [...limitPicks,...trendPicks,...auctionPicks].forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
 
     // 5) 市场概览
