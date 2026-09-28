@@ -112,7 +112,7 @@
   <div class="col">
     <div class="card" id="loading"><div>正在拉取实时行情、计算指标、执行选股…</div><div class="bar" style="margin-top:8px"><i></i></div></div>
     <div class="group" id="gLimit">
-      <div class="ghead"><span class="t-red">打板推荐 · 首板优先</span><span class="tagc" id="cLimit">0 / 3</span></div>
+      <div class="ghead"><span class="t-red">打板推荐 · 连板强度优先</span><span class="tagc" id="cLimit">0 / 3</span></div>
       <div class="picks" id="pLimit"><div class="empty">等待运行</div></div>
     </div>
     <div class="group" id="gAuction">
@@ -246,7 +246,7 @@ function klineMetrics(kl){
 /* ================== 策略引擎（鹤老大模式） ================== */
 function detectLimitPct(name){return /ST/i.test(name)?5:10;}
 
-function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐（首板优先）
+function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐（连板强度优先）
   const arr=[];
   for(const s of stocks){
     const limit=detectLimitPct(s.name);
@@ -407,8 +407,8 @@ function pickCard(p, rank, isLimit, km){
   // 依据文本
   const parts=[];
   if(zt){
-    if(lbc<=1)parts.push(`<b>模式要点·首板：</b>该股今日<b>首次涨停（首板）</b>，首板空间+人气兼具，适合打板优选；`);
-    else parts.push(`<b>模式要点·接力（非首板）：</b>该股已连板${lbc}天，明日分歧/断板风险加大，仅次优补足；`);
+    if(lbc<=1)parts.push(`<b>模式要点·首板：</b>该股今日<b>首次涨停（首板）</b>，连板接力溢价>首板（回测：连板次日溢价2.61% vs 首板0.69%），故连板强度靠前优先；`);
+    else parts.push(`<b>模式要点·接力（连板${lbc}板）：</b>该股已连板${lbc}天，连板高度是市场合力延续信号，打板接力溢价更佳（回测：连板次日溢价2.61% vs 首板0.69%），故优先；`);
     if(p.fund)parts.push(`封单约${fmtW_b(p.fund)}亿，封板较${p.fund>2e8?'坚实':'一般'}（课程03 封单质量）；`);
     if(p.flow)parts.push(`今日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'资金进场认同涨停级别':'主力净流出需警惕'}；`);
     if(p.hybk)parts.push(`所属<b>${p.hybk}</b>板块出现涨停梯队，板块合力强；`);
@@ -553,7 +553,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nLimit').value||3}只打板推荐</b>（首板优先，不足连板补）+ <b>${$('#nTrend').value||3}只当日大涨</b>（强势拉升，非涨停），另有<b>2只竞价可能涨停</b>，总数 ≤7。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nLimit').value||3}只打板推荐</b>（连板强度优先） + <b>${$('#nTrend').value||3}只当日大涨</b>（强势拉升，非涨停），另有<b>2只竞价可能涨停</b>，总数 ≤7。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
