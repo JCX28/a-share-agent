@@ -659,10 +659,12 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n){
     if(hot)sc+=10;                                       // 热门板块加分
     sc+=sentiment*8;                                     // 市场情绪加成
     if(openGap<1.5)sc-=12;                               // 高开过小，距涨停太远
-    if(vr<1)sc-=6;                                       // 未放量降权
-    return {sc, openGap, vr};
+    if(vr<1.5)sc-=15;                                    // 无量陷阱惩罚：未放量强降权（滤除高开无量、冲高回落隐患，回测无色样本）
+    // 无量陷阱硬过滤：昨日K线量比<1且高开>3% = 高开无量→冲高回落的经典形态，直接剔除不复选
+    const noVolTrap=(km&&km.vr<1&&openGap>3)||(km&&km.vr<1&&vr<0.8);
+    return {sc, openGap, vr, trap:noVolTrap};
   };
-  const scaled=cands.map(s=>({s,ev:score(s)}));
+  const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
   scaled.sort((a,b)=>b.ev.sc-a.ev.sc);
   return scaled.slice(0,Math.min(n,cands.length)).map(x=>x.s);
 }
