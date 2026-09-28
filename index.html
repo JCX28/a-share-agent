@@ -660,8 +660,9 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n){
     sc+=sentiment*8;                                     // 市场情绪加成
     if(openGap<1.5)sc-=12;                               // 高开过小，距涨停太远
     if(vr<1.5)sc-=15;                                    // 无量陷阱惩罚：未放量强降权（滤除高开无量、冲高回落隐患，回测无色样本）
-    // 无量陷阱硬过滤：昨日K线量比<1且高开>3% = 高开无量→冲高回落的经典形态，直接剔除不复选
-    const noVolTrap=(km&&km.vr<1&&openGap>3)||(km&&km.vr<1&&vr<0.8);
+    // 无量陷阱硬过滤：昨日K线量比<1且高开>3% = 高开无量→冲高回落的经典形态，直接剔除不复选；
+    // 另覆盖"K线数据缺失+高开"档：无数据确认量能的裸高开，追板风险极高，同样剔除(避免漏过空km导致的过滤失效)
+    const noVolTrap=(km&&km.vr<1&&(openGap>3||vr<0.8))||(!km&&openGap>3);
     return {sc, openGap, vr, trap:noVolTrap};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
@@ -671,14 +672,22 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n){
 function auctionCard(p, rank, km){
   const pct=p.changepercent.toFixed(2);
   const up=p.changepercent>=0;
-  const openGap=(+p.open&&+p.settlement)?((+p.open/+p.settlement-1)*100).toFixed(1):'-';
+  const ogNum=(+p.open&&+p.settlement)?((+p.open/+p.settlement-1)*100):0;
+  const openGap=ogNum.toFixed(1);
   const vr=km?km.vr:NaN;
   const name=p.name.replace('N','N·').replace('C','C·');
+  const pctNum=+p.changepercent||0;
+  // 高位放量炸板风险标签（仅展示提示，不改决策分——避免违背竞价回测9"量比高封板率更高"）
+  const warn=[];
+  if(ogNum>3&&!isNaN(vr)&&vr>1.5)warn.push('<span class="rtag warn">高开放量·分歧大</span>');
+  const retrace=pctNum-ogNum; // 当前涨幅相对竞价高开的回落幅度
+  if(retrace<-3)warn.push(`<span class="rtag danger">竞价高开已回落${retrace.toFixed(1)}%·谨防炸板</span>`);
   const niche=`今日涨<b>${pct}%</b>、竞价高开<b>${openGap}%</b>，处于冲击涨停强势区；`;
   return `<div class="pick">
     <div class="rk">${rank}</div>
     <div class="top"><span class="nm">${name}</span><span class="cd">${p.code}</span>
       <span class="pr ${up?'up':'down'}">${p.trade} ${up?'+':''}${pct}%</span></div>
+    ${warn.length?`<div class="risk">${warn.join(' ')}</div>`:''}
     <div class="bestrows">
       <div class="br"><div class="k">竞价高开</div><div class="v">${openGap}%</div></div>
       <div class="br"><div class="k">现涨幅</div><div class="v">${pct}%</div></div>
