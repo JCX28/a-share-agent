@@ -353,8 +353,8 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n){
     let sc=0;
     sc+=Math.min(Math.max(openGap,0)/lim,1)*34;          // 竞价撮合价高开距涨停（无前视主信号，回测：封板命中73% vs 高开基线16%）
     sc+=(openGap>=2&&openGap<=8)?16:(openGap>0&&openGap<2)?(openGap/2)*9:(openGap>8&&openGap<10)?(22-(openGap-8)*4):0; // 高开强度带(2~8%最佳)
-    sc+=(vr>=1.3&&vr<=3)?16:(vr>3)?9:(vr*6);            // 量比（回测：放量更贴近封板资金）
-    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/40,1)*12; // 前5日动量（昨收可得，无前视）
+    sc+=(vr>=1.3&&vr<=3)?18:(vr>3)?28:(vr*8);            // 量比（竞价与打板相反：量比越高封板率越高，回测9：>3封板24.4%/开→收+1.38% 优于 1.2~3的8.5%/0.67%）
+    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/40,1)*18; // 前5日动量（竞价最强封板信号，回测9：chg5≥25封板52%、≥10封板30%，顶格18）
     if(km&&km.yestChg>=lim*0.97)sc+=10;                 // 昨日涨停→今日高开接力（无前视；回测：连板次日+0.49% vs 首板-0.24%）
     if(flow>0)sc+=Math.min(flow/5e8,1)*12;              // 主力净流入
     if(hot)sc+=10;                                       // 热门板块加分
