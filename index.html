@@ -150,7 +150,7 @@
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
     </div>
     <div class="group" id="gTrend">
-      <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 3</span></div>
+      <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 3</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
     </div>
     <div class="card">
@@ -526,6 +526,8 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
   for(const s of stocks){
     const limit=detectLimitPct(s.name);
     if(!(s.changepercent>=limit*0.95))continue;
+    // 排除一字/秒板（开盘即在涨停价，无法买入）：只保留盘中封板、可实际买入的涨停
+    if((+s.open&&+s.settlement)&&((+s.open/+s.settlement-1)*100>=limit*0.95-0.1))continue;
     arr.push(s);
   }
   // 合并涨停池详情
@@ -547,7 +549,6 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
     const flow=flows[s.code]||0;
     const hyBoost=hyCount[s.hybk]?hyCount[s.hybk]/maxHy:0;
     const limit=detectLimitPct(s.name);
-    const ztOpen=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100>=limit*0.95-0.1):false; // 开盘即封(一字/秒)
     let sc=0;
     // 连板高度：打板真实口径回测「首板溢价0.69% vs 连板2.61%、再涨停12.6% vs 29.2%」→ 连板强度递增加分，首板保底(不再绝对优先)
     if(lbc<=1){sc+=12;}
@@ -559,8 +560,7 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
     sc+=hyBoost*11;                              // 板块助力
     if(flow>0)sc+=Math.min(flow/5e8,1)*8;        // 主力净流入（资金认同）
     sc-=Math.min(zbc,5)*3;                       // 炸板惩罚
-    if(km){sc+=(km.vr>=1.2)?-4:4;}               // 量比反转：缩量强板(一字/秒)次日溢价高、放量烂板差（回测8：连板量比<1.2溢价5.25% vs ≥1.2仅1.2%）
-    if(ztOpen)sc+=6;                             // 开盘即封：溢价3.57% vs 盘中封0.76%、再涨停33.9% vs 13.6%（回测8）
+    if(km){sc+=(km.vr>=1.2)?-4:4;}               // 量比反转：缩量强板(一字/秒)次日溢价高、放量烂板差（回测8）
     return {sc, lbc};
   };
   const scaled=arr.map(s=>({s,sc:score(s).sc,lbc:+s.lbc||1}));
@@ -569,9 +569,13 @@ function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐�
   return scaled.slice(0,n).map(x=>x.s).filter(Boolean);
 }
 
-function buildTrendPicks(cands, klines, flows, n){ // 非涨停 → 当天会大涨（强势拉升）
+function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天会大涨（强势拉升）；st=市场情绪0.2~1
   const arr=cands;
   flows=flows||{};
+  const sg=+st||0.5;
+  // 市场情绪（回测12）：情绪过热(昨日/当日涨停家数多、连板高)时，"非涨停低吸"风格易被抱团资金抽血、高开回落
+  // → 热市放大对高开的惩罚、强化低高开偏好（gapAmp：情绪0.6→1倍、1.0→2倍）
+  const gapAmp=1+Math.max(0,(sg-0.6)/0.4);
   const score=(s)=>{
     const km=klines[s.code];
     const vr=km?km.vr:1;
@@ -583,8 +587,8 @@ function buildTrendPicks(cands, klines, flows, n){ // 非涨停 → 当天会大
     const lim=detectLimitPct(s.name);
     const openGap=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0; // 竞价高开%（9:25撮合，无前视）
     let sc=0;
-    // 竞价高开（9:25无前视）：回测11显示高开越低越有当日强势拉升空间，高开越高越易当日回填 → 负权
-    sc+=openGap<1?10:(openGap<2)?4:(openGap<4)?-2:(openGap<6)?-10:-14;
+    // 竞价高开（9:25无前视）：回测11显示高开越低越有当日强势拉升空间，高开越高越易当日回填 → 负权；热市惩罚放大
+    sc+=(openGap<1?10:(openGap<2)?4:(openGap<4)?-2:(openGap<6)?-10:-14)*gapAmp;
     // 昨日涨停 → 今日易高开回落，降分（无前视）
     if(km&&km.yestChg>=lim*0.97)sc-=8;
     // 均线：空头(ma5≤ma10)高波动反弹当日涨幅胜过多头，弱化多头（无前视）
@@ -785,12 +789,17 @@ async function run(){
     }
 
     // 4) 选股
-    const limitPicks=buildLimitPicks(stocks, ztMap, klines, flows, nLimit);
-    const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrend);
-    // 市场情绪：涨停家数 + 红盘占比 → 0.2~1
+    // 市场情绪：涨停家数 + 红盘占比 → 0.2~1（供竞价/当日大涨；回测12:情绪过热时非涨停低吸易被抽血）
     const _ztCnt=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95-0.01).length;
     const _upR=stocks.length?stocks.filter(s=>s.changepercent>0).length/stocks.length:0;
     const sentiment=Math.min(1,Math.max(0.2,_ztCnt/60*0.5+_upR*0.5));
+    const _stTag=$('#sentiTrend');
+    if(_stTag){
+      _stTag.style.display='';
+      _stTag.textContent='市场情绪 '+(sentiment>0.72?'过热·谨慎追高':sentiment>=0.55?'偏热':sentiment>=0.4?'正常':'偏弱');
+    }
+    const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrend, sentiment);
+    const limitPicks=buildLimitPicks(stocks, ztMap, klines, flows, nLimit);
     const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, 2);
     [...limitPicks,...trendPicks,...auctionPicks].forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
 
