@@ -67,6 +67,34 @@
   @keyframes ln{from{left:-30%}to{left:100%}}
   .note{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6}
   .empty{font-size:12px;color:var(--muted);padding:8px}
+  /* 个股分析 */
+  .anacols{grid-template-columns:1fr 1fr}
+  @media(max-width:720px){.anacols{grid-template-columns:1fr}}
+  .sugbtn{display:inline-block;margin:3px 4px 0 0;font-size:12px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;cursor:pointer;background:#f8fafc;color:#374151}
+  .sugbtn:hover{background:#fee2e2;border-color:#fca5a5}
+  .htag{display:inline-block;margin:3px 4px 0 0;font-size:12px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;cursor:pointer;background:#fff;color:#1d4ed8}
+  .htag:hover{background:#dbeafe}
+  .anahead{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+  .star{font-size:12px;padding:5px 14px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:#fff;color:var(--text)}
+  .star:hover{background:#fff7ed}
+  .anabadge{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;background:#fff8f8;border-left:4px solid var(--red);border-radius:8px;padding:12px 14px;margin:12px 0}
+  .sigtitle{font-size:13px;font-weight:700;color:#374151}
+  .ana-metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0}
+  @media(max-width:720px){.ana-metrics{grid-template-columns:repeat(2,1fr)}}
+  .am{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+  .amk{font-size:10.5px;color:var(--muted)} .amv{font-size:14px;font-weight:700;margin-top:2px}
+  .mbanc{display:flex;gap:12px;flex-wrap:wrap;background:#fff;border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin-bottom:10px}
+  .mtr b{font-weight:700}
+  .indgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+  @media(max-width:720px){.indgrid{grid-template-columns:1fr}}
+  .igit{background:#fdfbf7;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:11.5px;line-height:1.7}
+  .igtitle{font-size:12px;font-weight:700;color:#991b1b;margin-bottom:2px}
+  .sigwrap{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:2px 0}
+  @media(max-width:720px){.sigwrap{grid-template-columns:1fr}}
+  .sigcol{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .sigtext{font-size:11.5px;line-height:1.8;color:#374151}
+  .tarline{font-size:12px;color:#374151;background:#fff;border-top:1px dashed var(--line);padding:10px 2px;margin-top:8px}
+  .risknote{font-size:11px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -77,6 +105,7 @@
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
   <button class="hbtn" id="btnHelp">策略依据</button>
+  <button class="hbtn" id="btnAnaly">个股分析</button>
 </header>
 
 <div id="app">
@@ -127,6 +156,25 @@
       <h3>决策依据 · 法则映射</h3>
       <div id="why"></div>
     </div>
+  </div>
+</div>
+
+<!-- 个股分析 · 独立版块 -->
+<div id="anaApp" style="display:none;padding:12px;max-width:1080px;margin:0 auto">
+  <div class="card" style="margin-bottom:12px">
+    <h3>个股分析 · 实时买卖决策</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="anaSearch" type="text" placeholder="输入股票代码或名称搜索，如 600519/贵州茅台/茅台" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px">
+      <button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:8px 18px" onclick="searchAna()">分析</button>
+      <button class="hbtn" style="border:1px solid var(--line);padding:8px 14px;color:var(--text);background:var(--card)" onclick="showHot()">热门股票</button>
+    </div>
+    <div id="anaSug" style="margin-top:6px"></div>
+    <div id="anaHot" style="margin-top:10px"></div>
+  </div>
+  <div id="anaResult" class="card" style="margin-bottom:12px"><div class="empty">请搜索或选择一只股票开始分析。关注后可从下方快捷访问。</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" class="anacols">
+    <div class="card"><h3>我的关注 ★</h3><div id="anaWatch"><div class="empty">暂无关注</div></div></div>
+    <div class="card"><h3>历史分析记录</h3><div id="anaHist"><div class="empty">暂无记录</div></div></div>
   </div>
 </div>
 
@@ -194,13 +242,13 @@ async function findTradingDay(){
 }
 
 function mt(code){return /^6\d{5}$/.test(code)?'sh':'sz';}
-async function fetchKlines(codes){
+async function fetchKlines(codes, n=12){
   const out={};
   await poolRange(0, Math.max(0,codes.length-1), 7, async(i)=>{
     const c=codes[i];
     try{
       const ssym = mt(c)+c;
-      const j=await fetchJson(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${ssym},day,,,12,qfq`,2);
+      const j=await fetchJson(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${ssym},day,,,${n},qfq`,2);
       const raw=(j&&j.data&&j.data[ssym])?(j.data[ssym]['qfqday']||j.data[ssym].day||null):null;
       if(raw&&raw.length){
         out[c]=raw.map(r=>({d:r[0],o:+r[1],c:+r[2],h:+r[3],l:+r[4],v:+r[5]}));
@@ -241,6 +289,222 @@ function klineMetrics(kl){
   const yestChg=(kl.length>=3)?((kl[kl.length-2].c/kl[kl.length-3].c-1)*100):0; // 昨日涨幅（昨收可得，无前视）
   return {price:last.c, vr, ma5, ma10, chg5, lbc, vol:last.v, yestChg,
     broke5:last.c<ma5, broke10:last.c<ma10};
+}
+
+/* ================== 个股分析（独立版块） ================== */
+let __SNAPSHOT=null; // 缓存 run() 已拉取的全市场快照，供搜索
+const __HOT=[['600519','贵州茅台'],['601318','中国平安'],['600036','招商银行'],['000858','五粮液'],['601398','工商银行'],
+  ['600900','长江电力'],['601899','紫金矿业'],['000333','美的集团'],['600276','恒瑞医药'],['601857','中国石油'],
+  ['601988','中国银行'],['000001','平安银行'],['600030','中信证券'],['002594','比亚迪'],['601601','中国太保'],
+  ['600028','中国石化'],['000651','格力电器'],['601668','中国建筑'],['002415','海康威视'],['600887','伊利股份'],
+  ['601088','中国神华'],['000725','京东方A'],['603259','药明康德'],['600585','海螺水泥']]; // 主板热门白名单（港股/ETF不入）
+
+function rsiSeries(closes,n=14){
+  const out=[]; let gain=0,loss=0;
+  for(let i=1;i<closes.length;i++){
+    const d=closes[i]-closes[i-1]; const g=d>0?d:0,l=d<0?-d:0;
+    if(i<=n){gain+=g;loss+=l; if(i===n){gain/=n;loss/=n; out.push(loss===0?100:100-100/(1+gain/loss));}}
+    else{gain=(gain*(n-1)+g)/n;loss=(loss*(n-1)+l)/n; out.push(loss===0?100:100-100/(1+gain/loss));}
+  }
+  return out;
+}
+function emaSeries(arr,n){
+  const out=[],k=2/(n+1); let e=arr[0];
+  for(let i=0;i<arr.length;i++){e=(i===0)?arr[0]:arr[i]*k+e*(1-k); out.push(e);}
+  return out;
+}
+function kdjSeries(kl){
+  const K=[],D=[],J=[]; let k=50,d=50;
+  if(kl.length>=9){
+    for(let i=0;i<kl.length;i++){
+      if(i>=8){const hh=Math.max(...kl.slice(i-8,i+1).map(x=>x.h)); const ll=Math.min(...kl.slice(i-8,i+1).map(x=>x.l));
+        const rsv=(hh===ll)?50:((kl[i].c-ll)/(hh-ll)*100);
+        k=(2/3)*k+(1/3)*rsv; d=(2/3)*d+(1/3)*k;}
+      else{const hh=Math.max(...kl.slice(0,i+1).map(x=>x.h)); const ll=Math.min(...kl.slice(0,i+1).map(x=>x.l));
+        const rsv=(hh===ll)?50:((kl[i].c-ll)/(hh-ll)*100); k=(2/3)*k+(1/3)*rsv; d=(2/3)*d+(1/3)*k;}
+      D.push(d); K.push(k); J.push(3*k-2*d);
+    }
+  }
+  return {K,D,J};
+}
+/* MACD/RSI/KDJ/MA 等指标 + 多因子买卖信号判断 + 风险等级 */
+function analyzeIndicators(kl){
+  if(!kl||kl.length<30)return null;
+  const closes=kl.map(x=>x.c);
+  const e12=emaSeries(closes,12), e26=emaSeries(closes,26);
+  const dif=e12.map((v,i)=>v-e26[i]); const dea=emaSeries(dif,9);
+  const hist=dif.map((v,i)=>(v-dea[i])*2);
+  const rsiA=rsiSeries(closes,14);
+  const kdj=kdjSeries(kl);
+  const ma=n=>closes.length>=n?closes.slice(-n).reduce((a,b)=>a+b,0)/n:null;
+  const macd={dif:dif[dif.length-1],dea:dea[dea.length-1],hist:hist[hist.length-1],
+    cross:(dif[dif.length-1]>dea[dif.length-1]&&dif[dif.length-2]<=dea[dif.length-2])?'金叉':(dif[dif.length-1]<dea[dif.length-1]&&dif[dif.length-2]>=dea[dif.length-2])?'死叉':'平'} ;
+  const rsi={v:rsiA[rsiA.length-1],prev:rsiA[rsiA.length-2]};
+  const k={K:kdj.K[kdj.K.length-1],D:kdj.D[kdj.D.length-1],J:kdj.J[kdj.J.length-1],
+    cross:kdj.K[kdj.K.length-1]>kdj.D[kdj.D.length-1]?'金叉':kdj.K[kdj.K.length-1]<kdj.D[kdj.D.length-1]?'死叉':'平'};
+  return {macd,rsi,k,ma5:ma(5),ma10:ma(10),ma20:ma(20),ma60:ma(60),
+    bars:kl.length,last:kl[kl.length-1]};
+}
+/* 主分析：结合 实时行情 + 指标 + 资金流 → 信号/目标价/风险 */
+function analyzeStock(q, km, flow){
+  const lim=detectLimitPct(q.name);
+  const price=+q.trade||0, chg=+q.changepercent||0;
+  const ind=km?analyzeIndicators(km.kl):null;
+  const vr=km?km.vr:1; const lbc=km?km.lbc:1; const yest=km?km.yestChg:0;
+  const m5=ind?ind.ma5:null,m10=ind?ind.ma10:null,m20=ind?ind.ma20:null;
+  const bullish=m5&&m10&&m20?(m5>m10&&m10>m20):false; const bearish=m5&&m10&&m20?(m5<m10&&m10<m20):false;
+  const reasons=[],risks=[]; let score=50;
+  // 趋势/均线
+  if(bullish){score+=12;reasons.push('均线多头排列（MA5>MA10>MA20），趋势向上');}
+  else if(bearish){score-=12;reasons.push('均线空头排列（MA5<MA10<MA20），趋势偏弱');}
+  // MACD
+  if(ind){ if(ind.macd.hist>0)score+=6; else score-=6;
+    if(ind.macd.cross==='金叉'){score+=8;reasons.push('MACD金叉（DIF上穿DEA），动能转多');}
+    else if(ind.macd.cross==='死叉'){score-=8;risks.push('MACD死叉，动能转弱');}
+    if(ind.macd.dif>0)score+=4; else score-=4; }
+  // RSI
+  if(ind){ if(ind.rsi.v>=70){score-=8;risks.push(`RSI ${ind.rsi.v.toFixed(0)} 超买，追高风险大`);}
+    else if(ind.rsi.v<=30){score+=6;reasons.push(`RSI ${ind.rsi.v.toFixed(0)} 超卖，存在反弹动能`);}
+    else if(ind.rsi.v>=50){score+=2;reasons.push(`RSI ${ind.rsi.v.toFixed(0)} 偏强`);} }
+  // KDJ
+  if(ind){ if(ind.k.J>80){score-=6;risks.push('KDJ J值超买');}
+    else if(ind.k.cross==='金叉'&&ind.k.K<30){score+=8;reasons.push('KDJ低位金叉');}
+    else if(ind.k.cross==='死叉'&&ind.k.K>70){score-=6;risks.push('KDJ高位死叉');} }
+  // 量能
+  if(vr>=1.5){score+=6;reasons.push(`量比${vr.toFixed(1)}，明显放量，资金进场`);}
+  else if(vr<0.8){score-=4;risks.push('量能萎缩，承接不足');}
+  // 当日强度
+  if(chg>=9.7){score+=8;reasons.push('当前接近涨停，情绪极强');risks.push('一字/秒板承接难，谨防追高');}
+  else if(chg>=5){score+=5;reasons.push('当日强势上涨中');}
+  else if(chg<0){score-=6;risks.push('当日走弱');}
+  // 资金流
+  if(flow>0){score+=5;reasons.push(`主力净流入${fmtB(flow)}亿，资金加仓`);}
+  else if(flow<0){score-=5;risks.push(`主力净流出${fmtB(-flow)}亿`);}
+  // 连板/情绪
+  if(lbc>=3){score+=6;reasons.push(`已连板${lbc}天，市场合力强`);}
+  if(lbc>=6){risks.push('连板高度高，断板风险大');}
+  if(/ST/.test(q.name)){score-=20;risks.push('ST股票，风险警示');}
+  // 结论
+  let verdict='持有/观望',tone='warn';
+  if(score>=70){verdict='买入';tone='ok';}
+  else if(score>=60){verdict='偏多买入';tone='ok';}
+  else if(score<=30){verdict='卖出/规避';tone='danger';}
+  else if(score<=40){verdict='偏空观望';tone='danger';}
+  // 风险等级
+  let risk='中'; 
+  if(risks.some(r=>/超高|ST|一字|断板|超买|高位|接近涨停/.test(r)))risk='高';
+  if(lbc>=6||/ST/.test(q.name))risk='高';
+  if(!risks.length&&score>60)risk='低';
+  // 目标价区间：支撑MA20/前低，压力前高/涨停价
+  let support=(m20&&m20<price)?m20:(m10&&m10<price)?m10:(price*0.95);
+  let resist=(price*1.1).toFixed(2), sl=(price*0.95).toFixed(2);
+  if(lim===5){resist=(price*1.05).toFixed(2);sl=(price*0.97).toFixed(2);}
+  const stopPoint=(price*0.93).toFixed(2);
+  return {score,verdict,tone,risk,reasons,risks,support:+support.toFixed(2),resist:+resist,sl:+sl,stopPoint:+stopPoint,macd:ind&&ind.macd,rsi:ind&&ind.rsi,k:ind&&ind.k,
+    ma5:m5,ma10:m10,ma20:m20,ma60:ind&&ind.ma60,vr};
+}
+/* 搜索：缓存快照全量(code/名称) + 热门白名单回退 */
+function searchStocks(kw){
+  kw=(kw||'').trim().toUpperCase(); if(!kw)return[];
+  const src=(__SNAPSHOT&&__SNAPSHOT.length)?__SNAPSHOT:__HOT.map(([c,n])=>({code:c,name:n,trade:0,changepercent:0}));
+  return src.filter(s=>s.code.includes(kw.replace(/^[SHZ]{2}/,''))||(s.name&&s.name.indexOf(kw)!==-1)).slice(0,10);
+}
+/* localStorage 关注/历史 */
+const LS_WATCH='ashare_watch',LS_HIST='ashare_hist';
+const loadLS=k=>{try{return JSON.parse(localStorage.getItem(k)||'[]');}catch(e){return[];}};
+const saveLS=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+function toggleWatch(code,name){
+  let w=loadLS(LS_WATCH);
+  const i=w.findIndex(x=>x.code===code);
+  if(i>=0)w.splice(i,1); else w.unshift({code,name,t:Date.now()});
+  saveLS(LS_WATCH,w); renderWatch();
+}
+function pushHist(q,res){
+  let h=loadLS(LS_HIST);
+  h.unshift({code:q.code,name:q.name,verdict:res.verdict,score:res.score,risk:res.risk,price:q.trade,chg:q.changepercent,t:Date.now()});
+  h=h.slice(0,50); saveLS(LS_HIST,h); renderHist();
+}
+function renderWatch(){
+  const el=$('#anaWatch'); if(!el)return;
+  const w=loadLS(LS_WATCH);
+  if(!w.length){el.innerHTML='<div class="empty">暂无关注，点击个股卡片底部的 ☆ 收藏</div>';return;}
+  el.innerHTML=w.map(x=>`<button class="htag" onclick="analyzeByCode('${x.code}')">${x.name} ${x.code}</button>`).join('');
+}
+function renderHist(){
+  const el=$('#anaHist'); if(!el)return;
+  const h=loadLS(LS_HIST);
+  if(!h.length){el.innerHTML='<div class="empty">暂无分析记录</div>';return;}
+  const toneC={ok:'#16803c',warn:'#c2410c',danger:'#e02424'};
+  el.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between"><span>近${h.length}条云端本地记录</span><a href="javascript:localStorage.removeItem('${LS_HIST}');renderHist()" style="color:var(--blue)">清空</a></div>`+
+    h.slice(0,12).map(x=>`<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;border-bottom:1px dashed var(--line)">
+      <span>${x.name} <span style="color:var(--muted)">${x.code}</span></span>
+      <span style="color:${toneC[x.tone]||'#374151'}">${x.verdict} · ${x.score}分 · ${x.risk}风险</span></div>`).join('');
+}
+/* 渲染个股分析 */
+async function analyzeByCode(code){
+  code=code.replace(/^[SHZ]{2}/,'');
+  const holder=$('#anaResult'); holder.innerHTML='<div class="empty" id="anaLoad">正在获取 <b>'+code+'</b> 实时行情、指标与资金流…</div>';
+  try{
+    // 实时快照（若缓存命中直接用；否则回退去腾讯K线取价）
+    let q=__SNAPSHOT&&__SNAPSHOT.find(s=>s.code===code);
+    let kArr=null;
+    try{kArr=await fetchKlines([code],120);}catch(e){}
+    const kl=kArr&&kArr[code];
+    if(!q&&kl){q={code,name:code,trade:kl[0].c,changepercent:0,open:kl[0].o,settlement:kl[0].c,turnoverratio:0,amount:0,nmc:0};}
+    if(!q)throw new Error('未找到该股票，请检查代码');
+    let flow=0; try{const f=await fetchMainFlow([code]);flow=f[code]||0;}catch(e){}
+    if(kl&&kl.length){const last=kl[kl.length-1],prev=kl.length>1?kl[kl.length-2]:last;
+      q.trade=+last.c; if(prev)q.changepercent=+(last.c/prev.c-1)*100; q.open=+last.o; q.settlement=+prev.c; q.name=q.name||code;}
+    let km=kl?klineMetrics(kl):null; if(!km)km={}; km.kl=kl;
+    const res=analyzeStock(q,km,flow);
+    pushHist(q,res);
+    renderAna(q,km,res,flow);
+  }catch(e){holder.innerHTML=`<div class="empty">分析失败：${e.message}</div>`;}
+}
+function fmtB2(v){v=v||0;return (v/1e8).toFixed(2);}
+function renderAna(q,km,res,flow){
+  const holder=$('#anaResult');
+  const pct=q.changepercent||0, up=pct>=0, price=q.trade||0;
+  const toneC={ok:'#16803c',warn:'#c2410c',danger:'#e02424'};
+  const star=loadLS(LS_WATCH).some(x=>x.code===q.code)?'★':'☆';
+  const indRow=(m5,m10,m20,m60)=>`<span class="mtr">MA5 <b>${m5?(+m5).toFixed(2):'—'}</b></span><span class="mtr">MA10 <b>${m10?(+m10).toFixed(2):'—'}</b></span><span class="mtr">MA20 <b>${m20?(+m20).toFixed(2):'—'}</b></span>${m60?`<span class="mtr">MA60 <b>${(+m60).toFixed(2)}</b></span>`:''}`;
+  const sigBlock=res.reasons.length?`<div class="sigcol"><div class="sigtitle">偏多信号（加分）</div>${res.reasons.map(r=>`<div class="sigtext" style="color:var(--green)">▲ ${r}</div>`).join('')}</div>`:'';
+  const rskBlock=res.risks.length?`<div class="sigcol"><div class="sigtitle">风险警示（减分）</div>${res.risks.map(r=>`<div class="sigtext" style="color:#b91c1c">▼ ${r}</div>`).join('')}</div>`:'';
+  const vm=res.macd,rsi=res.rsi,k=res.k;
+  const imacd=vm?`DIF ${vm.dif.toFixed(3)} / DEA ${vm.dea.toFixed(3)} / MACD ${vm.hist>=0?'+':''}${vm.hist.toFixed(3)} · <b>${vm.cross}</b>`:'—';
+  const irsi=rsi?`RSI14 ${rsi.v.toFixed(1)}（${rsi.v>=70?'超买':rsi.v<=30?'超卖':'中性'}）`:'—';
+  const ik= k?`K ${k.K.toFixed(1)}/D ${k.D.toFixed(1)}/J ${k.J.toFixed(1)} · <b>${k.cross}</b>`:'—';
+  const targetBlock=res.resist>=res.support?`参考区间：<b style="color:var(--green)">${res.support}</b> ~ <b style="color:var(--red)">${res.resist}</b>`:'—';
+  holder.innerHTML=`
+  <div class="anahead">
+    <div><span class="nm">${q.name||q.code}</span> <span class="cd">${q.code}</span>
+      <span class="pr ${up?'up':'down'}">${price.toFixed(2)} ${up?'+':''}${pct.toFixed(2)}%</span></div>
+    <div>
+      <button class="star" onclick="toggleWatch('${q.code}','${q.name.replace(/"/g,'')}')">${star} 关注</button>
+      <button class="star" onclick="analyzeByCode('${q.code}')">↻ 刷新</button>
+    </div>
+  </div>
+  <div class="anabadge" style="border-left-color:${toneC[res.tone]||'#c2410c'}">
+    <div><div class="sigtitle">综合建议 · ${res.verdict}</div>
+      <div style="font-size:11px;color:var(--muted)">综合评分 <b style="color:${toneC[res.tone]||'#c2410c'}">${res.score}</b>/100 · 风险等级 <b style="color:${res.risk==='高'?'#e02424':res.risk==='低'?'#16803c':'#c2410c'}">${res.risk}</b></div></div>
+    <div style="text-align:right;font-size:12px">止盈参考 ${res.resist}<br>止损 ${res.stopPoint}</div>
+  </div>
+  <div class="ana-metrics">
+    <div class="am"><div class="amk">量比</div><div class="amv">${km&&km.vr?(+km.vr).toFixed(2):'—'}</div></div>
+    <div class="am"><div class="amk">换手</div><div class="amv">${q.turnoverratio?q.turnoverratio.toFixed?q.turnoverratio.toFixed(2):q.turnoverratio+'':'—'}%</div></div>
+    <div class="am"><div class="amk">主力净流入</div><div class="amv" style="color:${flow>0?'var(--red)':flow<0?'var(--green)':'var(--text)'}">${flow?fmtB2(flow)+'亿':'—'}</div></div>
+    <div class="am"><div class="amk">连板高度</div><div class="amv">${km&&km.lbc?(km.lbc<=1?'首板':km.lbc+'板'):'—'}</div></div>
+    <div class="am"><div class="amk">5日涨幅</div><div class="amv">${km&&km.chg5?(+km.chg5).toFixed(1)+'%':'—'}</div></div>
+  </div>
+  <div class="mbanc" style="font-size:11.5px">${indRow(res.ma5,res.ma10,res.ma20,res.ma60)}</div>
+  <div class="indgrid">
+    <div class="igit"><div class="igtitle">MACD</div><div>${imacd}</div></div>
+    <div class="igit"><div class="igtitle">RSI</div><div>${irsi}</div></div>
+    <div class="igit"><div class="igtitle">KDJ</div><div>${ik}</div></div>
+  </div>
+  <div class="sigwrap">${sigBlock||''}${rskBlock||''}</div>
+  <div class="tarline">目标价：${targetBlock} · 决策依据：均线趋势 + MACD/RSI/KDJ 多周期共振 + 量能与资金流向。</div>
+  <div class="risknote">⚠ 本分析由实时行情与规则自动生成，仅供研究参考，<b>不构成任何投资建议</b>。据此操作盈亏自负，请严格风险控制。</div>`;
 }
 
 /* ================== 策略引擎（鹤老大模式） ================== */
@@ -461,6 +725,7 @@ async function run(){
       meta.sina=true; src.push('<li><span class="ok">✓</span> 新浪 · 全市场快照 <b>'+stocks.length+'</b> 只主板</li>');
     }catch(e){src.push('<li><span class="bad">✗</span> 新浪快照失败：'+e.message+'</li>');}
     if(!stocks.length) throw new Error('未获取到行情快照');
+    __SNAPSHOT=stocks; // 缓存供"个股分析"搜索
     setStatus('已获取快照 '+stocks.length+' 只，正在获取涨停池…','ok');
 
     // 2) 涨停池（连板/封单/板块）
@@ -581,6 +846,38 @@ function runHelp(){
     <button style="position:absolute;top:12px;right:12px;padding:4px 12px;border:none;border-radius:6px;cursor:pointer;background:#e5e7eb" onclick="document.getElementById('helpModal').style.display='none'">关闭</button>
     ${guideText()}</div>`;
 }
+/* 个股分析 · tab切换 */
+let anaView=false;
+function toggleAnaly(){
+  anaView=!anaView;
+  const app=$('#app'),ana=$('#anaApp');
+  app.style.display=anaView?'none':'grid';
+  ana.style.display=anaView?'block':'none';
+  $('#btnAnaly').style.background=anaView?'#fff':'';
+  $('#btnAnaly').style.color=anaView?'#b91c1c':'';
+  if(anaView){renderWatch();renderHist();renderHot();}
+}
+function searchAna(){
+  const kw=$('#anaSearch').value;
+  if(/^\d{6}$/.test(kw.replace(/^[SHZ]{2}/,''))){
+    analyzeByCode(kw); $('#anaSug').innerHTML=''; $('#anaHot').innerHTML=''; return;
+  }
+  const r=searchStocks(kw);
+  const sg=$('#anaSug');
+  if(!kw){sg.innerHTML='';return;}
+  if(!r.length){sg.innerHTML='<div class="empty">未匹配到股票，请检查代码/名称</div>';return;}
+  sg.innerHTML=r.map(s=>`<button class="sugbtn" onclick="analyzeByCode('${s.code}')">${s.name||s.code} ${s.code}</button>`).join('');
+}
+function renderHot(){
+  const el=$('#anaHot'); if(!el)return;
+  el.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">热门主板股票（点击分析）：</div>'+
+    __HOT.map(([c,n])=>`<button class="sugbtn" onclick="analyzeByCode('${c}')">${n} ${c}</button>`).join('');
+}
+function showHot(){renderHot();}
+$('#btnAnaly')?.addEventListener('click',toggleAnaly);
+$('#anaSearch')?.addEventListener('keydown',e=>{if(e.key==='Enter')searchAna();});
+$('#anaSearch')?.addEventListener('input',()=>searchAna());
+renderWatch();
 run();
 </script>
 </body>
