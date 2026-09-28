@@ -572,19 +572,24 @@ function buildTrendPicks(cands, klines, flows, n){ // 非涨停 → 当天会大
     const lim=detectLimitPct(s.name);
     const openGap=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0; // 竞价高开%（9:25撮合，无前视）
     let sc=0;
-    sc+=Math.min(Math.max(chg,0)/(lim*0.9),1)*8;   // 盘中实时确认（弱化：当日涨幅是"结果"非"原因"）
-    sc+=(openGap>=0.3&&openGap<=2)?14:(openGap>2&&openGap<=6)?18:(openGap>6)?8:0; // 竞价高开动能带（无前视主信号）
-    sc+=Math.min(Math.log10(vr+1)/1.1,1)*18;       // 放量确认
-    sc+=Math.min(hs/20,1)*10;                      // 换手人气
-    sc+=Math.log10(amount+1)/12.5*9;               // 成交额资金参与
-    sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*8;    // 小流通市值弹性（低吸）
-    if(flow>0)sc+=Math.min(flow/5e8,1)*10;         // 主力净流入（实时）
-    if(km)sc+=Math.min(Math.max(km.chg5,0),30)/30*18; // 5日动量（昨收可得，无前视）
-    if(km&&km.chg5>45)sc-=15;                      // 短期涨幅过陡追高惩罚
-    if(km&&km.yestChg>=lim*0.97)sc+=8;             // 昨日涨停→今日续强基因（无前视）
-    if(km&&km.ma5>km.ma10)sc+=6;                   // 均线多头（昨收形态，无前视）
-    if(vr<1)sc-=6;                                 // 未放量降权
-    if(chg<0)sc-=15;                               // 走弱降权
+    // 竞价高开（9:25无前视）：回测11显示高开越低越有当日强势拉升空间，高开越高越易当日回填 → 负权
+    sc+=openGap<1?10:(openGap<2)?4:(openGap<4)?-2:(openGap<6)?-10:-14;
+    // 昨日涨停 → 今日易高开回落，降分（无前视）
+    if(km&&km.yestChg>=lim*0.97)sc-=8;
+    // 均线：空头(ma5≤ma10)高波动反弹当日涨幅胜过多头，弱化多头（无前视）
+    if(km&&(km.ma5>km.ma10))sc-=2;else sc+=3;
+    // 5日动量(昨收无前视)非可靠正信号：仅对极端陡峭追高风险轻罚
+    if(km&&km.chg5>70)sc-=10;
+    // 盘中实时确认（弱化：当日涨幅是"结果"非"原因"）
+    sc+=Math.min(Math.max(chg,0)/(lim*0.9),1)*6;
+    // 放量/人气/资金（实时）
+    sc+=Math.min(Math.log10(vr+1)/1.1,1)*10;       // 量比
+    sc+=Math.min(hs/20,1)*8;                       // 换手人气
+    sc+=Math.log10(amount+1)/12.5*6;               // 成交额（降权）
+    sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*4;    // 小市值（弱化）
+    if(flow>0)sc+=Math.min(flow/5e8,1)*8;          // 主力净流入
+    if(vr<0.8)sc-=6;                               // 量能不足
+    if(chg<0)sc-=15;                               // 走弱
     return sc;
   };
   const scaled=arr.map(s=>({s,sc:score(s)}));
@@ -596,7 +601,7 @@ function prelimTrendScore(s){ // 初选排序：换手+成交额+小市值+竞�
   return Math.min((+s.turnoverratio||0)/15,1)*40
         +Math.log10((+s.amount||0)+1)/12.5*30
         +Math.max(0,1-Math.log10((+s.nmc||0)*1e4)/10)*20
-        +Math.min(Math.max(openGap,0)/6,1)*10; // 竞价高开（替代当日涨幅，去前视）
+        +(openGap<1?8:(openGap<2)?2:-6); // 低高开有拉升空间，不高开加分（与终分一致）
 }
 
 function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
