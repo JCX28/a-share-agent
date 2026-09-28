@@ -574,8 +574,8 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天�
   flows=flows||{};
   const sg=+st||0.5;
   // 市场情绪（回测12）：情绪过热(昨日/当日涨停家数多、连板高)时，"非涨停低吸"风格易被抱团资金抽血、高开回落
-  // → 热市放大对高开的惩罚、强化低高开偏好（gapAmp：情绪0.6→1倍、1.0→2倍）
-  const gapAmp=1+Math.max(0,(sg-0.6)/0.4);
+  // → gapAmp 全区间持续生效：sg∈[0.2,1]→gapAmp∈[0.86,1.30]。情绪越热，对高开的惩罚与低高开偏好越强（0.6不再为惰性门限）
+  const gapAmp=0.75+(sg*0.55);
   const score=(s)=>{
     const km=klines[s.code];
     const vr=km?km.vr:1;
