@@ -531,6 +531,15 @@ function renderAna(q,km,res,flow){
 function detectLimitPct(name){return /ST/i.test(name)?5:10;}
 
 function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天会大涨（强势拉升）；st=市场情绪0.2~1
+  // 盘中炸板硬剔除（与竞价板块口径一致）：盘中最高已触及涨停、但当前已跌破涨停(炸板未回封)的票，当日大涨板块同样剔除。
+  cands=cands.filter(s=>{
+    if(!(+s.high&&+s.settlement))return true;
+    const lmt=detectLimitPct(s.name);
+    const touchedZT=((+s.high/+s.settlement-1)*100>=lmt*0.95-0.01);      // 盘中最高曾触及涨停
+    const nowBroken=((+s.changepercent||0)<lmt*0.95-0.01);               // 当前已跌破涨停
+    if(touchedZT&&nowBroken)return false;                                // 盘中炸板未回封 → 剔除
+    return true;
+  });
   const arr=cands;
   flows=flows||{};
   const sg=+st||0.5;
