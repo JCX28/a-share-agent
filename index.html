@@ -608,17 +608,17 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     let sc=0;
     sc+=Math.min(Math.max(openGap,0)/lim,1)*34;          // 竞价撮合价高开距涨停（无前视主信号，回测：封板命中73% vs 高开基线16%）
     sc+=(openGap>=2&&openGap<=8)?16:(openGap>0&&openGap<2)?(openGap/2)*9:(openGap>8&&openGap<10)?(22-(openGap-8)*4):0; // 高开强度带(2~8%最佳)
-    sc+=(vr>=1.3&&vr<=3)?18:(vr>3)?28:(vr*8);            // 量比（竞价与打板相反：量比越高封板率越高，回测9：>3封板24.4%/开→收+1.38% 优于 1.2~3的8.5%/0.67%）
-    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/40,1)*18; // 前5日动量（竞价最强封板信号，回测9：chg5≥25封板52%、≥10封板30%，顶格18）
+    sc+=(vr>=1.3&&vr<=3)?22:(vr>3)?34:(vr*10);           // 量比·量能确认增强（昨日K线量比km.vr，9:26可知无前视；竞价与打板相反：量比越高封板率越高，回测9：>3封板24.4%优于1.2~3的8.5%）
+    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/40,1)*24; // 前5日动量·动能确认增强（chg5≥25封板52%、≥10封板30%，顶格提高到24；9:26可知无前视）
     if(km&&km.yestChg>=lim*0.97)sc+=10;                 // 昨日涨停→今日高开接力（无前视；回测：连板次日+0.49% vs 首板-0.24%）
     if(flow>0)sc+=Math.min(flow/5e8,1)*12;              // 主力净流入
     if(hot)sc+=10;                                       // 热门板块加分
     sc+=sentiment*8;                                     // 市场情绪加成
     if(openGap<1.5)sc-=12;                               // 高开过小，距涨停太远
-    if(vr<1.5)sc-=15;                                    // 无量陷阱惩罚：未放量强降权（滤除高开无量、冲高回落隐患，回测无色样本）
-    // 无量陷阱硬过滤：昨日K线量比<1且高开>3% = 高开无量→冲高回落的经典形态，直接剔除不复选；
+    if(vr<1.5)sc-=18;                                    // 无量陷阱惩罚增强：昨日K线量比小于1.5未放量，强降权（滤除高开无量、冲高回落隐患）
+    // 无量陷阱硬过滤增强：昨日K线量比<1.2且高开>2.5% = 高开无量→冲高回落的经典形态，直接剔除不复选；
     // 另覆盖"K线数据缺失+高开"档：无数据确认量能的裸高开，追板风险极高，同样剔除(避免漏过空km导致的过滤失效)
-    const noVolTrap=(km&&km.vr<1&&(openGap>3||vr<0.8))||(!km&&openGap>3);
+    const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5);
     return {sc, openGap, vr, trap:noVolTrap};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
