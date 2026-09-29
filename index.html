@@ -101,7 +101,7 @@
 
 <header>
   <h1>A股实时选股智能体</h1>
-  <span class="sub">主板打板·龙头·人气模式 · 已排除 科创板/创业板</span>
+  <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
   <button class="hbtn" id="btnHelp">策略依据</button>
@@ -114,7 +114,6 @@
   <div class="col">
     <div class="card">
       <h3>参数设置</h3>
-      <div class="ctrl"><label>打板推荐数（最多）</label><input type="number" id="nLimit" value="3" min="1" max="6"></div>
       <div class="ctrl"><label>当日大涨潜力数（最多）</label><input type="number" id="nTrend" value="3" min="1" max="6"></div>
       <div class="ctrl"><label>自动刷新（分）</label>
         <select id="auto" style="width:90px;padding:5px;border:1px solid var(--line);border-radius:6px">
@@ -141,10 +140,6 @@
   <!-- 右栏 -->
   <div class="col">
     <div class="card" id="loading"><div>正在拉取实时行情、计算指标、执行选股…</div><div class="bar" style="margin-top:8px"><i></i></div></div>
-    <div class="group" id="gLimit">
-      <div class="ghead"><span class="t-red">打板推荐 · 连板强度优先</span><span class="tagc" id="cLimit">0 / 3</span></div>
-      <div class="picks" id="pLimit"><div class="empty">等待运行</div></div>
-    </div>
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
@@ -183,7 +178,7 @@
 <div id="snapApp" style="display:none;padding:12px;max-width:1080px;margin:0 auto">
   <div class="card" style="margin-bottom:12px">
     <h3>每日 9:26 竞价快照存档</h3>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动归档当日三组选股（打板/竞价/当日大涨），存于本机 localStorage、最多保留30日。盘中可手动补录：</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动归档当日两组选股（竞价/当日大涨），存于本机 localStorage、最多保留30日。盘中可手动补录：</div>
     <button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:7px 16px" onclick="manualSnap()">立即存档当前选股</button>
   </div>
   <div class="card"><div id="snapList"><div class="empty">加载中…</div></div></div>
@@ -535,55 +530,6 @@ function renderAna(q,km,res,flow){
 /* ================== 策略引擎（鹤老大模式） ================== */
 function detectLimitPct(name){return /ST/i.test(name)?5:10;}
 
-function buildLimitPicks(stocks, ztPoolMap, klines, flows, n){ // 打板推荐（连板强度优先）
-  const arr=[];
-  for(const s of stocks){
-    const limit=detectLimitPct(s.name);
-    if(!(s.changepercent>=limit*0.95))continue;
-    // 排除一字/秒板（开盘即在涨停价，无法买入）：只保留盘中封板、可实际买入的涨停
-    if((+s.open&&+s.settlement)&&((+s.open/+s.settlement-1)*100>=limit*0.95-0.1))continue;
-    arr.push(s);
-  }
-  // 合并涨停池详情
-  for(const s of arr){
-    const z=ztPoolMap.get(s.code);
-    s.lbc=z?z.lbc:(klines[s.code]?klines[s.code].lbc:1);
-    s.fund=z?z.fund:0; s.zbc=z?z.zbc:0; s.hybk=z?z.hybk:''; s.ltsz=z?z.ltsz:(s.nmc*1e4);
-    s.hs=s.turnoverratio;
-  }
-  // 炸板的股票不推荐：凡当天曾开板(涨停池炸板次数 zbc≥1，即炸板后回封/弱势)一律剔除出打板候选
-  for(let k=arr.length-1;k>=0;k--){ if((+arr[k].zbc||0)>=1)arr.splice(k,1); }
-  // 板块热度（同一行业涨停家数）
-  const hyCount={};
-  arr.forEach(s=>{if(s.hybk){hyCount[s.hybk]=(hyCount[s.hybk]||0)+1;}});
-  const maxHy=Math.max(1,...Object.values(hyCount));
-  flows=flows||{};
-  const score=(s)=>{
-    const lbc=+s.lbc||1; const fund=+s.fund||0; const hs=+s.hs||0;
-    const ltsz=+s.ltsz||1e10;
-    const km=klines[s.code]; // 放量确认用
-    const flow=flows[s.code]||0;
-    const hyBoost=hyCount[s.hybk]?hyCount[s.hybk]/maxHy:0;
-    const limit=detectLimitPct(s.name);
-    let sc=0;
-    // 连板高度：打板真实口径回测「首板溢价0.69% vs 连板2.61%、再涨停12.6% vs 29.2%」→ 连板强度递增加分，首板保底(不再绝对优先)
-    if(lbc<=1){sc+=12;}
-    else{sc+=lbc*8;}                             // 2板16、3板24... 高度=市场合力延续信号
-    sc+=Math.log10(fund+1)/9*22;                 // 封单金额（封板质量）
-    sc+=Math.min(hs/8,1)*8;                      // 适度换手（≤8%人气适度；一字/秒板≈0不追高）
-    if(hs>20)sc-=Math.min((hs-20)/15,1)*8;       // 高换手烂板惩罚（回测8：放量烂板次日溢价低）
-    sc+=Math.max(0,1-Math.log10(ltsz)/9.7)*13;   // 小市值弹性
-    sc+=hyBoost*11;                              // 板块助力
-    if(flow>0)sc+=Math.min(flow/5e8,1)*8;        // 主力净流入（资金认同）
-    if(km){sc+=(km.vr>=1.2)?-4:4;}               // 量比反转：缩量强板(一字/秒)次日溢价高、放量烂板差（回测8）
-    return {sc, lbc};
-  };
-  const scaled=arr.map(s=>({s,sc:score(s).sc,lbc:+s.lbc||1}));
-  scaled.sort((a,b)=>b.sc-a.sc);
-  // 纯分数取前 n（回测支持连板强度优先，不再强制先取首板）
-  return scaled.slice(0,n).map(x=>x.s).filter(Boolean);
-}
-
 function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天会大涨（强势拉升）；st=市场情绪0.2~1
   const arr=cands;
   flows=flows||{};
@@ -729,7 +675,7 @@ function pickCard(p, rank, isLimit, km){
   const parts=[];
   if(zt){
     if(lbc<=1)parts.push(`<b>模式要点·首板：</b>该股今日<b>首次涨停（首板）</b>，连板接力溢价>首板（回测：连板次日溢价2.61% vs 首板0.69%），故连板强度靠前优先；`);
-    else parts.push(`<b>模式要点·接力（连板${lbc}板）：</b>该股已连板${lbc}天，连板高度是市场合力延续信号，打板接力溢价更佳（回测：连板次日溢价2.61% vs 首板0.69%），故优先；`);
+    else parts.push(`<b>模式要点·接力（连板${lbc}板）：</b>该股已连板${lbc}天，连板高度是市场合力延续信号，后续接力溢价更佳（回测：连板次日溢价2.61% vs 首板0.69%），故优先；`);
     if(p.fund)parts.push(`封单约${fmtW_b(p.fund)}亿，封板较${p.fund>2e8?'坚实':'一般'}（课程03 封单质量）；`);
     if(p.flow)parts.push(`今日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'资金进场认同涨停级别':'主力净流出需警惕'}；`);
     if(p.hybk)parts.push(`所属<b>${p.hybk}</b>板块出现涨停梯队，板块合力强；`);
@@ -770,7 +716,6 @@ function running(on){$('#loading').style.display=on?'block':'none';$('#bar').sty
 async function run(){
   running(true);
   setStatus('正在连接数据源…','');
-  const nLimit=Math.min(6,Math.max(1,+$('#nLimit').value||4));
   const nTrend=Math.min(6,Math.max(1,+$('#nTrend').value||3));
   const src=[];
   let meta={};
@@ -836,17 +781,15 @@ async function run(){
       _stTag.textContent='市场情绪 '+(sentiment>0.72?'过热·谨慎追高':sentiment>=0.55?'偏热':sentiment>=0.4?'正常':'偏弱');
     }
     const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrend, sentiment);
-    const limitPicks=buildLimitPicks(stocks, ztMap, klines, flows, nLimit);
     const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, 2, ztMap);
-    [...limitPicks,...trendPicks,...auctionPicks].forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
+    [...trendPicks,...auctionPicks].forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
 
     // 5) 市场概览
     const m=$('#ov');
     const upCount=stocks.filter(s=>s.changepercent>0).length;
     const dnCount=stocks.filter(s=>s.changepercent<0).length;
     const ztCount=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95-0.01).length;
-    const maxLbc=Math.max(0,...limitPicks.map(p=>+p.lbc||0));
-    const hot=sectorHeat(limitPicks,5);
+    const hot=sectorHeat([...trendPicks,...auctionPicks],5);
 
     $("#gTrend").style.display='block';
     const settleTime=stocks[0]?.ticktime||'-';
@@ -854,13 +797,10 @@ async function run(){
     m.innerHTML=`<div class="sect"><span>主板红盘家数</span><span class="n">${upCount}</span></div>
       <div class="sect"><span>主板绿盘家数</span><span class="n" style="color:var(--green)">${dnCount}</span></div>
       <div class="sect"><span>主板涨停家数</span><span class="n">${ztCount}</span></div>
-      <div class="sect"><span>命中最高连板</span><span class="n">${limitPicks.length?maxLbc+' 板':'—'}</span></div>
       <div class="note">情绪强弱：${ztCount>=60?'极强':ztCount>=30?'强':ztCount>=15?'中等':'弱'} · 涨跌比 ${ztCount>0&&dnCount>0?(upCount/dnCount).toFixed(1)+':1':'—'}</div>`;
     if(hot.length){m.insertAdjacentHTML('beforeend','<div class="trend">'+hot.map(([k])=>`<span class="chi">${k}</span>`).join('')+'</div><div class="note">热门概念板块（含涨停梯队）</div>');}
 
     // 6) 渲染
-    $('#cLimit').textContent=limitPicks.length+' / '+nLimit;
-    $('#pLimit').innerHTML=limitPicks.length?limitPicks.map((p,i)=>pickCard(p,i+1,true,klines[p.code])).join(''):'<div class="empty">今日无符合条件的打板主板票</div>';
     $('#cTrend').textContent=trendPicks.length+' / '+nTrend;
     $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">暂无当日强势大涨票</div>';
     $('#cAuction').textContent=auctionPicks.length+' / 2';
@@ -869,12 +809,11 @@ async function run(){
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
 
     maybeSaveSnap({
-      limit:limitPicks.map(s=>({c:s.code,n:s.name})),
       auction:auctionPicks.map(s=>({c:s.code,n:s.name})),
       trend:trendPicks.map(s=>({c:s.code,n:s.name}))
     });
 
-    setStatus(`完成 · 打板<b>${limitPicks.length}</b> + 当日大涨<b>${trendPicks.length}</b> + 竞价强势<b>${auctionPicks.length}</b>，合计≤12。`,'ok');
+    setStatus(`完成 · 当日大涨<b>${trendPicks.length}</b> + 竞价强势<b>${auctionPicks.length}</b>，合计≤6。`,'ok');
   }catch(e){
     setStatus('执行失败：'+e.message,'bad');
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
@@ -886,7 +825,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nLimit').value||3}只打板推荐</b>（连板强度优先） + <b>${$('#nTrend').value||3}只当日大涨</b>（强势拉升，非涨停），另有<b>2只竞价强势</b>，总数 ≤7。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||3}只当日大涨</b>（强势拉升，非涨停）+ <b>2只竞价强势</b>，总数 ≤5。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
@@ -977,7 +916,7 @@ function getGroupPicks(sel){
 function manualSnap(){
   const d=new Date();
   const snap={date:todayKey(),t:pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()),
-    limit:getGroupPicks('#pLimit'), auction:getGroupPicks('#pAuction'), trend:getGroupPicks('#pTrend')};
+    auction:getGroupPicks('#pAuction'), trend:getGroupPicks('#pTrend')};
   const arr=loadSnaps().filter(x=>x.date!==todayKey()); arr.unshift(snap); if(arr.length>30)arr.length=30;
   saveSnaps(arr); snapToday=todayKey(); renderSnaps();
 }
@@ -990,7 +929,7 @@ function renderSnaps(){
   el.innerHTML=arr.map(sp=>'<div class="card" style="margin-bottom:10px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>'+sp.date+' <span style="color:var(--muted);font-size:12px">'+sp.t+'</span></b>'
     +'<span style="color:var(--muted);font-size:11px">'+(sp.date===todayKey()?'今日':'历史')+'</span></div>'
-    +blk('打板推荐',sp.limit)+blk('竞价强势',sp.auction)+blk('当日大涨',sp.trend)
+    +blk('竞价强势',sp.auction)+blk('当日大涨',sp.trend)
     +'</div>').join('');
 }
 function toggleSnap(){
