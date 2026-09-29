@@ -150,7 +150,7 @@
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
     </div>
     <div class="group" id="gIntra">
-      <div class="ghead"><span class="t-orange">盘中选股 · 实时放量突破追涨（非涨停）</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
+      <div class="ghead"><span class="t-orange">盘中选股 · 2日续涨·强势回踩（非涨停）</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
       <div class="picks" id="pIntra"><div class="empty">等待运行</div></div>
     </div>
     <div class="card">
@@ -603,10 +603,14 @@ function prelimIntraScore(s){ // 盘中初选（实时数据，无需K线）：�
         +((+s.trade>+s.open)?15:0); // 现价站上开盘价（分时走强）
 }
 
-/* ================== 盘中选股 · 实时放量突破追涨 ==================
-   用户自定义策略：在当前时段选"最值得购入"的盘中强势票，默认2只、可调1~6。
-   与竞价/当日大涨不同：这是盘中实时决策，允许使用当日实时数据（正在买入的那刻本就可得到），但
-   仍排除已涨停（难上车）、排除盘中炸板、排除ST；无前视污染盘前选股（盘中快照也进"对账闭环"回测当日开→收）。 */
+/* ================== 盘中选股 · 2日续涨·强势回踩 ==================
+   用户策略：所选的股票未来2天更可能续涨。默认2只、可调1~6。
+   与竞价/当日大涨不同：盘中实时决策，允许用当日实时数据（正在买入那刻即可得）。
+   思路：押注"趋势健康 + 分时强势回踩未破位"，而非单纯追最高/贴近涨停（追顶/贴板买点差、隔日难续涨）。
+   - 趋势健康(昨日K线9:26可知)：均线多头、站上5日线、动量健康非极端
+   - 分时强势回踩：现价站上开盘价、从当日高点小回撤1~4%（未追顶=买点佳）、未贴近涨停（留2日续涨空间）
+   - 量能：非天量、非无量；小市值+主力净流入为辅
+   硬剔除：排除ST / 已涨停 / 盘中炸板未回封；对账按2日累计收益（决策日开→+2日收盘）考核。 */
 function buildIntraPicks(cands, klines, flows, n){
   cands=cands||[];
   // 硬过滤：排除ST / 已涨停 / 盘中炸板未回封（与竞价·当日大涨同口径）
@@ -626,31 +630,40 @@ function buildIntraPicks(cands, klines, flows, n){
     const lim=detectLimitPct(s.name);
     const chg=+s.changepercent||0;                 // 实时涨幅
     const trade=+s.trade||0;                       // 现价
+    const high=+s.high||trade;                     // 今日最高（实时）
     const open=+s.open||0;                         // 今开
-    const hs=+s.turnoverratio||0;                  // 实时换手（单位一致，作放量主信号）
+    const hs=+s.turnoverratio||0;                  // 实时换手
     const amount=+s.amount||0;                     // 实时成交额
     const nmc=+s.nmc||0;                           // 流通市值（万元）
-    const aboveOpen=trade>open?1:0;                // 分时是否站上开盘价（走强）
-    const ceilingSpace=(lim>0&&trade>0)?(lim/trade-1)*100:0; // 距涨停空间%（>0才有追涨余地）
+    const aboveOpen=trade>open;                    // 分时是否站上开盘价（走强）
+    const pb=(high>0)?(high-trade)/high*100:0;     // 距日内高点回撤%（>0即从高点回落有买点）
+    const ceilingSpace=(lim>0&&trade>0)?(lim/trade-1)*100:0; // 距涨停空间%（2日续涨空间）
     let sc=0;
-    // 实时涨幅：越强越值得追，但留封板空间奖励，贴近涨停买点差
-    sc+=Math.min(Math.max(chg,0)/(lim*0.8),1)*26;
-    if(ceilingSpace>=2&&ceilingSpace<8)sc+=8;      // 距涨停尚有2~8% → 有追涨续攻空间，最佳买点带
-    if(ceilingSpace<2)sc-=6;                       // 已极贴近涨停，日内难再上车（买点差）
-    // 分时走强：站上开盘价 + 
-    sc+=aboveOpen?14:-20;                          // 现价跌破开盘价 → 分时转弱强剔
-    // 实时放量：换手活跃 + 成交额
-    sc+=Math.min(hs/20,1)*16;
-    sc+=Math.log10(amount+1)/12.5*8;
-    // 背景动能/位置（K线，9:26可知）：动量 + 均线多头
+    // 一、分时强势回踩（实时）：站上开盘价 + 小回撤不追顶
+    sc+=aboveOpen?10:-25;                          // 跌破开盘价 → 分时转弱强剔
+    if(pb>=1&&pb<=4)sc+=14;                        // 高点回撤1~4%：强势回踩最佳买点带
+    else if(pb>0&&pb<1)sc+=4;                       // 仍贴顶（追涨）给少量
+    else if(pb>4&&pb<=7)sc+=6;                      // 回踩偏深但未破位
+    else sc-=10;                                    // 回撤>7%：分时转弱
+    // 二、2日续涨空间：未贴近涨停（离涨停越近，隔日越难续涨、买点越差）
+    sc+=(ceilingSpace>=5)?8:(ceilingSpace>=2&&ceilingSpace<5)?4:(ceilingSpace<2?-8:0);
+    // 三、趋势健康（昨日K线，9:26可知）：均线多头 + 站上MA5 + 动量健康非极端
     if(km){
-      if(km.chg5!=null)sc+=Math.min(Math.max(km.chg5,0)/40,1)*10; // 5日动量
-      if(km.ma5&&km.ma10&&km.ma5>km.ma10)sc+=5;    // 均线多头更稳
-      if(km.vr<0.8)sc-=6;                          // 量能背景不足
+      if(km.ma5&&km.ma10&&km.ma20&&km.ma5>km.ma10&&km.ma10>km.ma20)sc+=16;
+      else if(km.ma5&&km.ma10&&km.ma5>km.ma10)sc+=8;
+      if(km.ma5&&km.close!=null&&km.close>km.ma5)sc+=8; // 现价站上5日线（续涨趋势）
+      const chg5=km.chg5;
+      if(chg5!=null){ if(chg5>=5&&chg5<=25)sc+=12;       // 动量健康非极端
+        else if(chg5<0)sc-=8;                            // 动能转弱
+        else if(chg5>40)sc-=6; }                         // 近期已大涨，追高风险
+      if(km.vr<0.8)sc-=6;                                // 量能背景不足
     }
-    sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*6;    // 小市值弹性
-    if(flow>0)sc+=Math.min(flow/5e8,1)*8;          // 主力净流入(新浪资金流，T+1/EOD口径为辅)
-    if(hs<1.5)sc-=12;                              // 无量陷阱惩罚
+    // 四、量能（实时）：非天量、非无量
+    sc+=(hs>=3&&hs<=15)?10:(hs>25?-8:(hs<1.5?-12:0));
+    sc+=Math.log10(amount+1)/12.5*6;                 // 成交额
+    // 五、辅助：小市值弹性 + 主力净流入（新浪资金流，T+1/EOD口径为辅）
+    sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*6;
+    if(flow>0)sc+=Math.min(flow/5e8,1)*8;
     return sc;
   };
   const scaled=cands.map(s=>({s,sc:score(s)}));
@@ -661,10 +674,14 @@ function intraCard(p, rank, km){
   const pct=p.changepercent.toFixed(2); const up=p.changepercent>=0;
   const chg=+p.changepercent||0; const lim=detectLimitPct(p.name);
   const ceilingSpace=(p.trade>0&&lim>0)?(lim/+p.trade-1)*100:0;
+  const trade=+p.trade||0, high=+p.high||trade;
+  const pb=(high>0)?(high-trade)/high*100:0;
+  const pbLvl=(pb>0&&pb<=4)?'未追顶·买点佳':(pb>4&&pb<=7)?'回踩偏深':'贴顶/破位';
+  const maOk=(km&&km.ma5&&km.ma10&&km.ma5>km.ma10);
   const name=p.name.replace('N','N·').replace('C','C·');
   const flow=p.flow;
-  const why=`盘中实时<b>放量突破追涨</b>：现涨${pct}% 、${p.trade>p.open?'站上开盘价·分时走强':'跌破开盘价'}，距涨停还有${ceilingSpace.toFixed(1)}%空间
-    ；换手${fmtW(+p.turnoverratio)}%、量能${(km&&km.vr)>=1.5?'明显放量':'中上'}，${flow?('主力'+(flow>0?'净流入'+fmtB(flow)+'亿':'净流出')):'资金面未更新'}。`;
+  const why=`盘中<b>2日续涨·强势回踩</b>：现涨${pct}%、${p.trade>p.open?'站上开盘价·分时走强':'跌破开盘价'}，从日内高点小回撤${pb.toFixed(1)}%（${pbLvl}），距涨停还有${ceilingSpace.toFixed(1)}%续涨空间
+    ；${maOk?'均线多头·趋势健康':'未站上多头均线'}，换手${fmtW(+p.turnoverratio)}%、量能${(km&&km.vr)>=1.5?'明显放量':'中上'}，${flow?('主力'+(flow>0?'净流入'+fmtB(flow)+'亿':'净流出')):'资金面未更新'}。`;
   return `<div class="pick">
     <div class="rk">${rank}</div>
     <div class="top"><span class="nm">${name}</span><span class="cd">${p.code}</span>
@@ -672,12 +689,13 @@ function intraCard(p, rank, km){
     <div class="bestrows">
       <div class="br"><div class="k">现涨幅</div><div class="v">${pct}%</div></div>
       <div class="br"><div class="k">距涨停</div><div class="v" style="color:${ceilingSpace<2?'var(--orange)':'var(--text)'}">${ceilingSpace.toFixed(1)}%</div></div>
+      <div class="br"><div class="k">高点回撤</div><div class="v" style="color:${(pb>0&&pb<=4)?'var(--red)':'var(--text)'}">${pb.toFixed(1)}%</div></div>
       <div class="br"><div class="k">换手率</div><div class="v">${fmtW(+p.turnoverratio)}%</div></div>
       ${km?`<div class="br"><div class="k">量比</div><div class="v">${fmtW(km.vr)}</div></div>`:''}
       <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${flow>0?'var(--red)':flow<0?'var(--green)':'var(--text)'}">${flow?fmtB(flow)+'亿':'—'}</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
     </div>
-    <div class="why">${why}<br><span style="color:#991b1b">⚠ 盘中选股为实时追涨博弈，仅供研究，非投资建议；破位/炸板须立即离场。</span></div>
+    <div class="why">${why}<br><span style="color:#991b1b">⚠ 盘中选股为2日续涨博弈，仅供研究，非投资建议；破位/炸板须立即离场。</span></div>
   </div>`;
 }
 function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
@@ -856,7 +874,7 @@ async function run(){
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
       return og>=1.5&&og<l*0.95;})
       .sort((a,b)=>{const oa=(+a.open&&+a.settlement)?((+a.open/+a.settlement-1)*100):0;const ob=(+b.open&&+b.settlement)?((+b.open/+b.settlement-1)*100):0;return ob-oa;}).slice(0,20);
-    // 盘中·实时放量突破追涨候选：未涨停、涨幅健康、实时换手活跃、分时站上开盘价（全为盘中可得的实时数据）
+    // 盘中·2日续涨·强势回踩候选：未涨停、涨幅健康、实时换手活跃、分时站上开盘价（全为盘中可得的实时数据）
     const intraShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
       const c=+s.changepercent||0;
       return !/ST/.test(s.name)&&c>=1.5&&c<l*0.9&&(+s.turnoverratio||0)>=2&&(+s.trade>+s.open);})
@@ -916,7 +934,7 @@ async function run(){
     $('#cAuction').textContent=auctionPicks.length+' / 2';
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的竞价强势票</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntra;
-    $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合追涨的强势票（需未涨停·涨幅≥1.5%·实时放量并站上开盘价）</div>';
+    $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·强势回踩的强势票（需未涨停·非ST·趋势健康·站上开盘价且无炸板）</div>';
     $('#why').innerHTML=guideText();
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
 
@@ -939,7 +957,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（强势拉升，非涨停）+ <b>2只竞价强势</b> + <b>${$('#nIntra').value||2}只盘中选股</b>（实时放量突破追涨，非涨停）。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（强势拉升，非涨停）+ <b>2只竞价强势</b> + <b>${$('#nIntra').value||2}只盘中选股</b>（2日续涨·强势回踩，非涨停）。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
@@ -1073,11 +1091,20 @@ async function reconcileReturns(){ // 对历史快照逐股计算"决策交易�
   const newRets=[]; let cnt=0;
   for(const x of pend){
     const kl=klines[x.it.c]; if(!kl)continue;
-    const bar=kl.find(b=>b.d&&(b.d.replace(/-/g,'')>=x.date)); // 首个 >= 快照日的完整bar(决策交易日，升序)
-    if(!bar||!(bar.o>0&&bar.c>0))continue;
-    const intra=(bar.c/bar.o-1)*100;                       // 日内：开盘→收盘（推荐价开盘买入）
-    const snapRet=(!x.it.p||x.it.p<=0)?intra:(bar.c/x.it.p-1)*100; // 隔夜+日内：收盘/9:26快照推荐价
-    newRets.push({date:x.date,g:x.g,c:x.it.c,n:x.it.n,p:x.it.p,open:bar.o,close:bar.c,intra:+intra.toFixed(3),snapRet:+snapRet.toFixed(3)});
+    const idx=kl.findIndex(b=>b.d&&(b.d.replace(/-/g,'')>=x.date)); // 首个 >= 快照日的完整bar索引(决策交易日，升序)
+    if(idx<0)continue;
+    const bar=kl[idx]; if(!(bar.o>0&&bar.c>0))continue;
+    let intra, snapRet, r2;
+    if(x.g==='intra'){ // 盘中选股按"2日累计收益"考核：决策日开 → +2根完整bar收盘（隔2日）
+      const b2=kl[idx+2]; if(!b2||!(b2.o>0&&b2.c>0))continue; // 还未走完2日,暂不对账(下次增量补)
+      intra=(b2.c/bar.o-1)*100;                       // 2日累计：决策日开盘 → 第+2日收盘
+      snapRet=(!x.it.p||x.it.p<=0)?intra:(b2.c/x.it.p-1)*100; // 决策推荐价 → 第+2日收盘
+      r2=+intra.toFixed(3);
+    }else{
+      intra=(bar.c/bar.o-1)*100;                      // 日内：开盘→收盘（推荐价开盘买入）
+      snapRet=(!x.it.p||x.it.p<=0)?intra:(bar.c/x.it.p-1)*100; // 隔夜+日内：收盘/9:26快照推荐价
+    }
+    newRets.push({date:x.date,g:x.g,c:x.it.c,n:x.it.n,p:x.it.p,open:bar.o,close:x.g==='intra'?(kl[idx+2]&&kl[idx+2].c||bar.c):bar.c,intra:+intra.toFixed(3),snapRet:+snapRet.toFixed(3),r2:r2!=null?r2:null});
     cnt++;
   }
   if(newRets.length){const cur=loadReturns(); saveReturns(cur.concat(newRets).slice(-2000));}
@@ -1140,7 +1167,7 @@ function renderSnaps(){
   const el=$('#snapList'); if(!el)return;
   const arr=loadSnaps(); const R=loadReturns();
   const rmap=new Map(R.map(r=>[r.date+'|'+r.g+'|'+r.c,r]));
-  const sum=(g)=>{const a=R.filter(r=>r.g===g&&isFinite(r.intra)); if(!a.length)return null; const win=a.filter(r=>r.intra>0).length; return {n:a.length,wr:(win/a.length*100).toFixed(1),avg:(a.reduce((x,r)=>x+r.intra,0)/a.length).toFixed(2),avgR:(a.reduce((x,r)=>x+(isFinite(r.snapRet)?r.snapRet:0),0)/a.length).toFixed(2)};};
+  const sum=(g)=>{const val=(r)=>g==='intra'?(r.r2!=null?r.r2:r.intra):r.intra; const a=R.filter(r=>r.g===g&&isFinite(val(r))); if(!a.length)return null; const win=a.filter(r=>val(r)>0).length; return {n:a.length,wr:(win/a.length*100).toFixed(1),avg:(a.reduce((x,r)=>x+val(r),0)/a.length).toFixed(2),avgR:(a.reduce((x,r)=>x+(isFinite(r.snapRet)?r.snapRet:0),0)/a.length).toFixed(2)};};
   const sa=sum('auction'), st=sum('trend'), si=sum('intra');
   const stat=(sa&&st)?(`已对账 竞价 ${sa.n}·胜${sa.wr}%/均${sa.avg}% · 大涨 ${st.n}·胜${st.wr}%/均${st.avg}% · 盘中 ${si?si.n:0}·胜${si?si.wr+'%':'—'}/均${si?si.avg+'%':'—'}`):(sa||st||si)?'部分样本已对账，可继续增量对账。':'';
 
@@ -1159,7 +1186,7 @@ function renderSnaps(){
       +'<td style="text-align:center">'+(si?si.n:'—')+'</td><td style="text-align:center">'+(si?si.wr+'%':'—')+'</td>'
       +'<td style="text-align:center">'+(si?si.avg:'—')+'</td><td style="text-align:center">'+(si?si.avgR:'—')+'</td></tr>'
     +'</table></div>'
-    +'<div style="font-size:11.5px;margin-top:6px;line-height:1.6">点击"开始对账"用新浪日K计算各历史快照建议股次日开→收收益并累计；"自动调参"按分桶胜率给出权重缩放建议（人工确认后写入 localStorage，下次选股生效）。</div>'
+    +'<div style="font-size:11.5px;margin-top:6px;line-height:1.6">点击"开始对账"用新浪日K计算各历史快照建议股收益并累计（竞价/当日大涨=次日开→收，盘中选股=决策日开→第+2日收盘的2日累计）并累计；"自动调参"按分桶胜率给出权重缩放建议（人工确认后写入 localStorage，下次选股生效）。</div>'
     +'<div style="margin-top:8px">'
     +'<button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:6px 14px" onclick="doReconcile()">开始对账</button> '
     +'<button class="hbtn" style="border:1px solid #fca5a5;padding:6px 14px;color:#9a3412;background:#fff" onclick="doTune()">查看/应用自动调参</button>'
@@ -1168,7 +1195,7 @@ function renderSnaps(){
 
   if(!arr.length){el.innerHTML=head+'<div class="empty">暂无存档。交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动保存当日各板块选股；非盘中可点上方按钮手动补录。</div>';return;}
   const blk=(title,items,sp)=>{const g=title.indexOf('竞价')===0?'auction':(title.indexOf('盘中')===0?'intra':'trend'); const n=items?(items.length):0;
-    const lis=(items&&items.length)?items.map(x=>{const r=rmap.get(sp.date+'|'+g+'|'+x.c);const chip=r?('<span style="font-size:10px;color:'+(r.intra>=0?'var(--red)':'var(--green)')+';margin-left:4px">'+(r.intra>=0?'+':'')+r.intra+'%</span>'):'';return '<button class="sugbtn" onclick="analyzeByCode(\''+x.c+'\')">'+x.n+chip+'</button>';}).join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>';
+    const lis=(items&&items.length)?items.map(x=>{const r=rmap.get(sp.date+'|'+g+'|'+x.c);const dv=r?((g==='intra'?(r.r2!=null?r.r2:r.intra):r.intra)):null;const chip=r?('<span style="font-size:10px;color:'+(dv>=0?'var(--red)':'var(--green)')+';margin-left:4px">'+(dv>=0?'+':'')+dv+'%</span>'):'';return '<button class="sugbtn" onclick="analyzeByCode(\''+x.c+'\')">'+x.n+chip+'</button>';}).join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>';
     return '<div style="margin:4px 0"><div style="font-size:11px;color:var(--muted)">'+title+'（'+n+'）</div>'+lis+'</div>';};
   el.innerHTML=head+arr.map(sp=>'<div class="card" style="margin-bottom:10px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>'+sp.date+' <span style="color:var(--muted);font-size:12px">'+sp.t+'</span></b>'
