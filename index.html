@@ -745,14 +745,23 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     sc+=sentiment*8*aw.senti; // 市场情绪加成
     if(openGap<1.5)sc-=12*aw.smallPen; // 高开过小，距涨停太远
     if(vr<1.5)sc-=18*aw.noVolPen; // 无量陷阱惩罚增强：昨日K线量比小于1.5未放量，强降权（滤除高开无量、冲高回落隐患）
-    // 无量陷阱硬过滤增强：昨日K线量比<1.2且高开>2.5% = 高开无量→冲高回落的经典形态，直接剔除不复选；
-    // 另覆盖"K线数据缺失+高开"档：无数据确认量能的裸高开，追板风险极高，同样剔除(避免漏过空km导致的过滤失效)
-    const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5);
-    return {sc, openGap, vr, trap:noVolTrap};
+    // 无量陷阱硬过滤增强：昨日K线量比<1.2且高开>2.5% = 高开无量→冲高回落的经典形态，直接剔除不复选。
+    // ★兜底（用户反馈：曾因一次K线批量失败，!km分支把竞价整板剔空→0只）：仅当本轮竞价候选池"基本都没拿到K线"
+    //   (有数据票数0)时，把"无数据裸高开"从硬剔降级为"保留但置最低分排到末尾"，宁可给保守建议也不让整板真空；
+    //   一旦拿到哪怕1只K线(池>0只已确认数据层在工作)就恢复"无数据裸高开=高风险硬剔"，避免正常情况下漏选。
+    const hasK=cands.filter(x=>klines[x.code]).length;
+    const noKdata=hasK===0;                                    // 本轮竞价池几乎未取到任何K线(疑似上游批量失败)
+    const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5&&!noKdata);
+    return {sc, openGap, vr, trap:noVolTrap, weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
+  // ★兜底续：把"无K线裸高开(weak)"票保留但置最低分，保证数据缺失时至少有几只可参考（排在正常票之后）
+  scaled.forEach(x=>{ if(x.ev.weak) x.ev.sc=-1e9; });
   scaled.sort((a,b)=>b.ev.sc-a.ev.sc);
-  return scaled.slice(0,Math.min(n,cands.length)).map(x=>x.s);
+  return scaled.slice(0,Math.min(n,cands.length)).map(x=>{
+    if(x.ev.weak)x.s._weak=true; // 标记：本轮K线缺失时的兜底裸高开票，供卡片提示"数据不足·仅供参考"
+    return x.s;
+  });
 }
 function auctionCard(p, rank, km){
   const pct=p.changepercent.toFixed(2);
@@ -764,6 +773,7 @@ function auctionCard(p, rank, km){
   const pctNum=+p.changepercent||0;
   // 高位放量炸板风险标签（仅展示提示，不改决策分——避免违背竞价回测9"量比高封板率更高"）
   const warn=[];
+  if(p._weak)warn.push('<span class="rtag warn">K线数据不足·仅供参考</span>'); // 兜底：本轮上游取K线失败时的裸高开票，指标缺失，仅作参考
   if(ogNum>3&&!isNaN(vr)&&vr>1.5)warn.push('<span class="rtag warn">高开放量·分歧大</span>');
   const retrace=pctNum-ogNum; // 当前涨幅相对竞价高开的回落幅度
   if(retrace<-3)warn.push(`<span class="rtag danger">竞价高开已回落${retrace.toFixed(1)}%·谨防炸板</span>`);
