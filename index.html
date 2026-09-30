@@ -912,14 +912,19 @@ async function run(){
     const _ztCnt=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95-0.01).length;
     const _upR=stocks.length?stocks.filter(s=>s.changepercent>0).length/stocks.length:0;
     const sentiment=Math.min(1,Math.max(0.2,_ztCnt/60*0.5+_upR*0.5));
+    // ★情绪门禁·少而精（用户方向1）：市场人气弱时"宁缺毋滥"——偏弱只保留最强、极弱直接停推，
+    //   避免在弱市/缩量无人气时仍天天推荐（此时大多买在反弹高点或无人接盘）；强情绪/人气确认才敞开发数。
+    const _gateMsg=sentiment<0.3?'门禁·情绪极弱·今日不推荐':(sentiment<0.4?'门禁·偏弱·仅保留最强':'');
+    const _sentiN=(base)=>sentiment<0.3?0:(sentiment<0.4?(base>1?1:base):base);
+    const nTrendE=_sentiN(nTrend), nAucE=_sentiN(2), nIntraE=_sentiN(nIntra);
     const _stTag=$('#sentiTrend');
     if(_stTag){
       _stTag.style.display='';
-      _stTag.textContent='市场情绪 '+(sentiment>0.72?'过热·谨慎追高':sentiment>=0.55?'偏热':sentiment>=0.4?'正常':'偏弱');
+      _stTag.textContent='市场情绪 '+(sentiment>0.72?'过热·谨慎追高':sentiment>=0.55?'偏热':sentiment>=0.4?'正常':'偏弱')+(_gateMsg?' · '+_gateMsg:'');
     }
-    const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrend, sentiment);
-    const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, 2, ztMap);
-    let intraPicks=buildIntraPicks(intraShort, klines, flows, nIntra);
+    const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrendE, sentiment);
+    const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE, ztMap);
+    let intraPicks=buildIntraPicks(intraShort, klines, flows, nIntraE);
     // ★盘中冻结：buildIntraPicks是实时版块，auto-refresh每次都会换成"当前涨最高"的票=逐日内顶。
     //   选中后N分钟(COOL)内不换新票——仅当老票破位/涨停/炸板(离开intraShort候选池)才补新票，并标记"新选/延续/换新"。
     const COOL=10*60000; let _iMark='新选';
@@ -951,11 +956,11 @@ async function run(){
     if(hot.length){m.insertAdjacentHTML('beforeend','<div class="trend">'+hot.map(([k])=>`<span class="chi">${k}</span>`).join('')+'</div><div class="note">热门概念板块（含涨停梯队）</div>');}
 
     // 6) 渲染
-    $('#cTrend').textContent=trendPicks.length+' / '+nTrend;
-    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">暂无当日强势大涨票</div>';
-    $('#cAuction').textContent=auctionPicks.length+' / 2';
-    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的竞价强势票</div>';
-    $('#cIntra').textContent=intraPicks.length+' / '+nIntra;
+    $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
+    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'今日不推荐：市场情绪极弱 · 人气不足，系统主动停推（避免弱市买顶）':(sentiment<0.4?'今日仅保留最强·当前未达标的强势票不足':'暂无当日强势大涨票'))+'</div>';
+    $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
+    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'今日不推荐：市场情绪极弱 · 系统主动停推':'暂无符合条件的竞价强势票')+'</div>';
+    $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·强势回踩的强势票（需未涨停·非ST·趋势健康·回踩买点·站上开盘价且无炸板）</div>';
     $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] 盘中选股对已选中票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶；仅贴顶不算买点(需从高点回撤1.5~4%)。</div>');
     // 时间守卫：当日大涨/竞价为9:26竞价时点选股；已过竞价窗口后，盘中重算的结果仅作参考——明示勿追高。
@@ -1091,8 +1096,8 @@ function manualSnap(){
    数据流：snapRecord() 存档时补记推荐价 p 与无前视因子 f(高开og/量比vr/5日动量chg5/昨涨停yestZt)
    → reconcileReturns() 取该股决策交易日(bar.date>=快照日的首个bar)的开/收 → 算 日内(收/开-1) 与 隔夜+日内(收/推荐价-1)
    → 存 localStorage `ashare_returns` → renderSnaps 展示分组胜率/均收益 + 因子分桶胜率
-   → applySuggestedWeights() 由分桶胜率"统计+人工确认"生成权重缩放，写入 `ashare_wts`，打分函数读取。
-   全程对账用过去日期的历史数据，对盘前选股无前视污染；调参需人工点按钮确认，不静默改。 */
+   → autoTune() 由分桶胜率"无人值守"自动生成权重缩放（样本≥MIN_AUTO才调、有上下限防发散、wr<55失效因子自动降权），写入 `ashare_wts`，打分函数即时读取。
+   全程对账用过去日期的历史数据，对盘前选股无前视污染；调参默认自动进行，另保留"手动应用/重置"作人工兜底。 */
 let __LASTPICK={auction:[],trend:[]};
 const RETKEY='ashare_returns';
 function snapRecord(s,km){ // 9:26可知的无前视因子快照
@@ -1139,6 +1144,7 @@ async function reconcileReturns(){ // 对历史快照逐股计算"决策交易�
     cnt++;
   }
   if(newRets.length){const cur=loadReturns(); saveReturns(cur.concat(newRets).slice(-2000));}
+  if(newRets.length)autoTune(); // ★无人值守：对账出样本即自动调参写权重（无需人工确认）；cnt=0时样本未增，不重复算
   if(snapView)renderSnaps();
   return cnt;
 }
@@ -1186,12 +1192,25 @@ function suggestFromEdge(rep){ // 由分桶胜率给出"建议权重缩放"（�
   }
   return s;
 }
-function applySuggestedWeights(){ // 人工确认：把建议权重写入 localStorage，随后run()即时生效
+function applySuggestedWeights(){ // 人工 override：把建议权重写入 localStorage，随后run()即时生效（可作手动兜底）
   const rep=buildEdgeReport(); const sug=suggestFromEdge(rep);
   let o={}; try{o=JSON.parse(localStorage.getItem('ashare_wts')||'{}')||{};}catch(e){o={};}
-  o=Object.assign({},o,sug);
+  o=Object.assign({},o,sug); markTuneMeta(o,'manual');
   try{localStorage.setItem('ashare_wts',JSON.stringify(o));}catch(e){}
   renderSnaps();
+}
+const MIN_AUTO=8; // 每组已对账样本≥8才自动调参（防小样本抖动/过拟合）
+function markTuneMeta(o,kind){o._meta={t:Date.now(),kind:kind};return o;}
+function autoTune(){ // ★真·自动调参（无人值守）：对账出样本即调用。
+  //   由对账分桶胜率给出权重缩放（suggestFromEdge内 clamp 已有上下限防发散；wr<55 的失效因子自动降权=持续淘汰伪因子）。
+  //   仅当该组样本充足(≥MIN_AUTO)才写入，避免小样本噪声；写入 ashare_wts 后 run()/打分函数即时读取生效。
+  const rep=buildEdgeReport(); const sug=suggestFromEdge(rep);
+  let o={}; try{o=JSON.parse(localStorage.getItem('ashare_wts')||'{}')||{};}catch(e){o={};}
+  let k=0;
+  if(rep.auction&&rep.auction.cnt>=MIN_AUTO&&sug.auction){o.auction=sug.auction;k++;}
+  if(rep.trend&&rep.trend.cnt>=MIN_AUTO&&sug.trend){o.trend=sug.trend;k++;}
+  if(k){o=markTuneMeta(o,'auto'); try{localStorage.setItem('ashare_wts',JSON.stringify(o));}catch(e){}}
+  return k; // 返回本次实际调整的板块组数（0=样本不足未动）
 }
 function fmtWtRow(label,cells){return '<tr style="font-size:11.5px"><td style="padding:2px 6px;color:var(--muted)">'+label+'</td>'+cells.map(c=>'<td style="text-align:center;padding:2px 6px">'+c+'</td>').join('')+'</tr>';}
 function renderSnaps(){
@@ -1201,10 +1220,14 @@ function renderSnaps(){
   const sum=(g)=>{const val=(r)=>g==='intra'?(r.r2!=null?r.r2:r.intra):r.intra; const a=R.filter(r=>r.g===g&&isFinite(val(r))); if(!a.length)return null; const win=a.filter(r=>val(r)>0).length; return {n:a.length,wr:(win/a.length*100).toFixed(1),avg:(a.reduce((x,r)=>x+val(r),0)/a.length).toFixed(2),avgR:(a.reduce((x,r)=>x+(isFinite(r.snapRet)?r.snapRet:0),0)/a.length).toFixed(2)};};
   const sa=sum('auction'), st=sum('trend'), si=sum('intra');
   const stat=(sa&&st)?(`已对账 竞价 ${sa.n}·胜${sa.wr}%/均${sa.avg}% · 大涨 ${st.n}·胜${st.wr}%/均${st.avg}% · 盘中 ${si?si.n:0}·胜${si?si.wr+'%':'—'}/均${si?si.avg+'%':'—'}`):(sa||st||si)?'部分样本已对账，可继续增量对账。':'';
+  // 自动调参状态徽标（无人值守：对账出样本即自动写权重）
+  let _wmeta=null; try{const _o=JSON.parse(localStorage.getItem('ashare_wts')||'{}')||{};_wmeta=_o._meta||null;}catch(e){}
+  const _tuneTag=_wmeta?('<div style="font-size:11px;color:#9a3412;margin:4px 0">⚙ 自动调参已生效 · 上次'+( _wmeta.kind==='manual'?'手动应用':'自动调参' )+' '+new Date(_wmeta.t).toLocaleTimeString()+'（权重已写入对外·下次选股即时生效）</div>'):'<div style="font-size:11px;color:var(--muted);margin:4px 0">自动调参：每组已对账样本≥'+MIN_AUTO+'后，每次对账自动按分桶胜率微调权重并即时生效（无需人工确认）。</div>';
 
   const head='<div class="card" style="margin-bottom:10px;background:#fff8f8;border-left:4px solid var(--red)">'
     +'<h3>对账闭环 · 次日收益回测</h3>'
     +(stat?'<div style="font-size:12px;margin:4px 0">'+stat+'</div>':'')
+    +_tuneTag
     +'<div style="font-size:11.5px"><table style="border-collapse:collapse;width:100%">'
     +fmtWtRow('板块',['样本','胜率','均日内%','隔夜+日内%'])
     +'<tr style="font-size:11.5px"><td style="padding:2px 6px">竞价强势</td>'
@@ -1217,10 +1240,10 @@ function renderSnaps(){
       +'<td style="text-align:center">'+(si?si.n:'—')+'</td><td style="text-align:center">'+(si?si.wr+'%':'—')+'</td>'
       +'<td style="text-align:center">'+(si?si.avg:'—')+'</td><td style="text-align:center">'+(si?si.avgR:'—')+'</td></tr>'
     +'</table></div>'
-    +'<div style="font-size:11.5px;margin-top:6px;line-height:1.6">点击"开始对账"用新浪日K计算各历史快照建议股收益并累计（竞价/当日大涨=次日开→收，盘中选股=决策日开→第+2日收盘的2日累计）并累计；"自动调参"按分桶胜率给出权重缩放建议（人工确认后写入 localStorage，下次选股生效）。</div>'
+    +'<div style="font-size:11.5px;margin-top:6px;line-height:1.6">点击"开始对账"用新浪日K计算各历史快照建议股收益并累计（竞价/当日大涨=次日开→收，盘中选股=决策日开→第+2日收盘的2日累计）；对账出样本后<b>自动调参</b>按分桶胜率微调权重并即时生效（无人值守，胜率<55%的失效因子自动降权、有上下限防发散），可随时"重置权重"回到原始策略。</div>'
     +'<div style="margin-top:8px">'
     +'<button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:6px 14px" onclick="doReconcile()">开始对账</button> '
-    +'<button class="hbtn" style="border:1px solid #fca5a5;padding:6px 14px;color:#9a3412;background:#fff" onclick="doTune()">查看/应用自动调参</button>'
+    +'<button class="hbtn" style="border:1px solid #fca5a5;padding:6px 14px;color:#9a3412;background:#fff" onclick="doTune()">查看分桶 / 手动应用</button>'
     +'<button class="hbtn" style="border:1px solid var(--line);padding:6px 14px" onclick="resetWeights()">重置权重</button>'
     +'</div></div>';
 
@@ -1245,7 +1268,7 @@ function doTune(){
       +'</table><div style="font-size:11px;color:#9a3412">建议缩放：'+JSON.stringify(sug[g]||{})+'</div></div>';};
   const box=document.createElement('div');
   box.innerHTML='<div style="background:#fff;border:1px solid var(--line);border-radius:12px;max-width:560px;padding:18px;line-height:1.7;font-size:12.5px">'
-    +'<b>自动调参 · 基于对账分桶统计（需人工确认）</b>'
+    +'<b>调参 · 基于对账分桶统计（自动调参与手动兜底）</b>'
     +showGroup('auction')+showGroup('trend')
     +'<div style="margin-top:10px;color:var(--muted);font-size:11px">点"应用"把建议权重写入 localStorage，下次"执行实时选股"即生效；可随时"重置权重"。统计口径=决策日开→收。</div>'
     +'<div style="margin-top:10px"><button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:6px 16px" onclick="boxOk()">应用建议权重</button> '
