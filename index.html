@@ -580,8 +580,8 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天�
     if(km&&(km.ma5>km.ma10))sc-=2;else sc+=3;
     // 5日动量(昨收无前视)非可靠正信号：仅对极端陡峭追高风险轻罚
     if(km&&km.chg5>70)sc-=10;
-    // 盘中实时确认（弱化：当日涨幅是"结果"非"原因"）
-    sc+=Math.min(Math.max(chg,0)/(lim*0.9),1)*6;
+    // 已移除"实时涨幅追高项"：9:26竞价时chg≈0本无贡献，唯一作用是盘中自动刷新重跑时把已涨高的票(如哈药+7%)顶上来→追高工具。
+    //   当日大涨=9:26竞价快照选股，不应因"盘中已涨"再加分——当日涨幅是"结果"非"原因"，违反无前视纪律；实时项仅保留往下惩罚(chg<0)与量能/资金。
     // 放量/人气/资金（实时）
     sc+=Math.min(Math.log10(vr+1)/1.1,1)*10*tw.vr;       // 量比
     sc+=Math.min(hs/20,1)*8*tw.turnover;                 // 换手人气
@@ -944,6 +944,14 @@ async function run(){
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的竞价强势票</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntra;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·强势回踩的强势票（需未涨停·非ST·趋势健康·站上开盘价且无炸板）</div>';
+    // 时间守卫：当日大涨/竞价为9:26竞价时点选股；已过竞价窗口后，盘中重算的结果仅作参考——明示勿追高。
+    const _n2=new Date(),_hm2=_n2.getHours()*60+_n2.getMinutes(),_wk2=_n2.getDay();
+    if(!(_wk2>=1&&_wk2<=5&&_hm2>=545&&_hm2<=585)){
+      const _note='<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">已过9:45竞价窗口 · 下列为盘中最新实时重算，仅作参考，勿按上涨追高（9:26竞价结果见快照）。</div>';
+      const _pt=$('#pTrend'),_pa=$('#pAuction');
+      if(_pt)_pt.insertAdjacentHTML('afterbegin',_note);
+      if(_pa)_pa.insertAdjacentHTML('afterbegin',_note);
+    }
     $('#why').innerHTML=guideText();
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
 
