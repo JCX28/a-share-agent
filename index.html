@@ -545,6 +545,13 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天�
     if(touchedZT&&nowBroken)return false;                                // 盘中炸板未回封 → 剔除
     return true;
   });
+  // ★方案1：硬剔除空头排列票（ma5≤ma10，5日趋势向下），避免"接飞刀"（如亨通光电5日-20%仍被反弹分选中后大跌）。
+  //   注：回测11曾显示空头低高开反弹略胜多头，该剔除方向与之相反，属用户取舍；K线均线不可得时不全剔（保留待N样本验证）。
+  cands=cands.filter(s=>{
+    const km=klines[s.code];
+    if(!km||km.ma5==null||km.ma10==null)return true; // 无/缺均线 → 无法判定，保留
+    return km.ma5>km.ma10;                           // 仅保留多头向上票
+  });
   const arr=cands;
   flows=flows||{};
   const sg=+st||0.5;
