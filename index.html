@@ -922,10 +922,11 @@ async function run(){
     const _ztCnt=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95-0.01).length;
     const _upR=stocks.length?stocks.filter(s=>s.changepercent>0).length/stocks.length:0;
     const sentiment=Math.min(1,Math.max(0.2,_ztCnt/60*0.5+_upR*0.5));
-    // ★情绪门禁·少而精（用户方向1）：市场人气弱时"宁缺毋滥"——偏弱只保留最强、极弱直接停推，
-    //   避免在弱市/缩量无人气时仍天天推荐（此时大多买在反弹高点或无人接盘）；强情绪/人气确认才敞开发数。
-    const _gateMsg=sentiment<0.3?'门禁·情绪极弱·今日不推荐':(sentiment<0.4?'门禁·偏弱·仅保留最强':'');
-    const _sentiN=(base)=>sentiment<0.3?0:(sentiment<0.4?(base>1?1:base):base);
+    // ★情绪门禁·只挡极弱、不挡弱（用户方向1，经前20日回测验证）：
+    //   回测显示"仅保留最强(0.3~0.4)"档胜率反而最高(54.2%)、"正常"档最差(40.6%)——弱市里选出的逆势强势票更强。
+    //   故改为：仅 <0.3(情绪极弱/冰点) 才停推防接飞刀；0.3~0.4 不再减到1只，恢复正常发数。
+    const _gateMsg=sentiment<0.3?'门禁·情绪极弱·今日不推荐':'';
+    const _sentiN=(base)=>sentiment<0.3?0:base;  // <0.3 停推；≥0.3 一律按用户设定发数
     const nTrendE=_sentiN(nTrend), nAucE=_sentiN(2), nIntraE=_sentiN(nIntra);
     const _stTag=$('#sentiTrend');
     if(_stTag){
@@ -967,7 +968,7 @@ async function run(){
 
     // 6) 渲染
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
-    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'今日不推荐：市场情绪极弱 · 人气不足，系统主动停推（避免弱市买顶）':(sentiment<0.4?'今日仅保留最强·当前未达标的强势票不足':'暂无当日强势大涨票'))+'</div>';
+    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'今日不推荐：市场情绪极弱 · 人气不足，系统主动停推（避免弱市买顶）':'暂无当日强势大涨票')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'今日不推荐：市场情绪极弱 · 系统主动停推':'暂无符合条件的竞价强势票')+'</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
