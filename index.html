@@ -648,12 +648,13 @@ function buildIntraPicks(cands, klines, flows, n){
     const pb=(high>0)?(high-trade)/high*100:0;     // 距日内高点回撤%（>0即从高点回落有买点）
     const ceilingSpace=(lim>0&&trade>0)?(lim/trade-1)*100:0; // 距涨停空间%（2日续涨空间）
     let sc=0;
-    // 一、分时强势回踩（实时）：站上开盘价 + 小回撤不追顶
+    // 一、分时强势回踩（实时）：站上开盘价；真正的回踩买点=从日内高点回落1.5~4%；贴顶/无回撤=买在最高点→负分
     sc+=aboveOpen?10:-25;                          // 跌破开盘价 → 分时转弱强剔
-    if(pb>=1&&pb<=4)sc+=14;                        // 高点回撤1~4%：强势回踩最佳买点带
-    else if(pb>0&&pb<1)sc+=4;                       // 仍贴顶（追涨）给少量
-    else if(pb>4&&pb<=7)sc+=6;                      // 回踩偏深但未破位
-    else sc-=10;                                    // 回撤>7%：分时转弱
+    if(pb>=1.5&&pb<=4)sc+=14;                       // 真正强势回踩买点带(1.5~4%)
+    else if(pb>=1&&pb<1.5)sc+=6;                    // 1~1.5% 小回踩
+    else if(pb>0&&pb<1)sc-=8;                       // 贴当日顶/几乎无回撤：买入即在最高点，风险高
+    else if(pb>4&&pb<=7)sc+=4;                      // 回踩偏深但未破位
+    else sc-=12;                                    // 回撤>7% 或精确处于当日最高点 → 分时转弱/追顶
     // 二、2日续涨空间：未贴近涨停（离涨停越近，隔日越难续涨、买点越差）
     sc+=(ceilingSpace>=5)?8:(ceilingSpace>=2&&ceilingSpace<5)?4:(ceilingSpace<2?-8:0);
     // 三、趋势健康（昨日K线，9:26可知）：均线多头 + 站上MA5 + 动量健康非极端
@@ -685,7 +686,7 @@ function intraCard(p, rank, km){
   const ceilingSpace=(p.trade>0&&lim>0)?(lim/+p.trade-1)*100:0;
   const trade=+p.trade||0, high=+p.high||trade;
   const pb=(high>0)?(high-trade)/high*100:0;
-  const pbLvl=(pb>0&&pb<=4)?'未追顶·买点佳':(pb>4&&pb<=7)?'回踩偏深':'贴顶/破位';
+  const pbLvl=(pb>=1.5&&pb<=4)?'强势回踩·买点佳':(pb>0&&pb<1.5)?'贴顶·忌高点追买':(pb>4&&pb<=7)?'回踩偏深':'追顶/破位';
   const maOk=(km&&km.ma5&&km.ma10&&km.ma5>km.ma10);
   const name=p.name.replace('N','N·').replace('C','C·');
   const flow=p.flow;
@@ -841,6 +842,7 @@ let timer=null;
 function setStatus(t,c){const el=$('#status');el.innerHTML=t;el.className='status '+c;}
 function running(on){$('#loading').style.display=on?'block':'none';$('#bar').style.display=on?'block':'none';}
 
+let __intraLock={ts:0,codes:[]}; // 盘中选股冻结：选中的票在冷却窗内不随auto-refresh换成"当前涨最高"的新票(防追日内顶)
 async function run(){
   running(true);
   setStatus('正在连接数据源…','');
@@ -917,7 +919,18 @@ async function run(){
     }
     const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrend, sentiment);
     const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, 2, ztMap);
-    const intraPicks=buildIntraPicks(intraShort, klines, flows, nIntra);
+    let intraPicks=buildIntraPicks(intraShort, klines, flows, nIntra);
+    // ★盘中冻结：buildIntraPicks是实时版块，auto-refresh每次都会换成"当前涨最高"的票=逐日内顶。
+    //   选中后N分钟(COOL)内不换新票——仅当老票破位/涨停/炸板(离开intraShort候选池)才补新票，并标记"新选/延续/换新"。
+    const COOL=10*60000; let _iMark='新选';
+    if(Date.now()-__intraLock.ts<COOL){
+      const keep=__intraLock.codes.map(c=>intraShort.find(x=>x.code===c)).filter(Boolean); // 老票仍在候选池才保留
+      const merged=keep.slice();
+      _iMark=keep.length?'延续(冻结)':'换新(老票已失效)';
+      for(const p of intraPicks){ if(merged.length>=nIntra)break; if(!merged.some(x=>x.code===p.code))merged.push(p); }
+      intraPicks=merged.slice(0,nIntra);
+    }
+    __intraLock.ts=Date.now(); __intraLock.codes=intraPicks.map(p=>p.code);
     [...trendPicks,...auctionPicks,...intraPicks].forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
 
     // 5) 市场概览
@@ -943,7 +956,8 @@ async function run(){
     $('#cAuction').textContent=auctionPicks.length+' / 2';
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的竞价强势票</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntra;
-    $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·强势回踩的强势票（需未涨停·非ST·趋势健康·站上开盘价且无炸板）</div>';
+    $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·强势回踩的强势票（需未涨停·非ST·趋势健康·回踩买点·站上开盘价且无炸板）</div>';
+    $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] 盘中选股对已选中票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶；仅贴顶不算买点(需从高点回撤1.5~4%)。</div>');
     // 时间守卫：当日大涨/竞价为9:26竞价时点选股；已过竞价窗口后，盘中重算的结果仅作参考——明示勿追高。
     const _n2=new Date(),_hm2=_n2.getHours()*60+_n2.getMinutes(),_wk2=_n2.getDay();
     if(!(_wk2>=1&&_wk2<=5&&_hm2>=545&&_hm2<=585)){
