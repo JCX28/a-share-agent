@@ -142,7 +142,7 @@
   <div class="col">
     <div class="card" id="loading"><div>正在拉取实时行情、计算指标、执行选股…</div><div class="bar" style="margin-top:8px"><i></i></div></div>
     <div class="group" id="gAuction">
-      <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
+      <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 1</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
     </div>
     <div class="group" id="gTrend">
@@ -713,7 +713,7 @@ function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
   return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,n);
 }
 
-/* 竞价·强势确认：结合集合竞价高开强度 + 市场情绪 + 盘中炸板剔除，推荐2只主板强势股 */
+/* 竞价·强势确认：结合集合竞价高开强度 + 市场情绪 + 盘中炸板剔除，推荐1只主板强势股 */
 function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap){
   flows=flows||{};
   if(!(hotSector instanceof Set))hotSector=new Set();
@@ -939,7 +939,7 @@ async function run(){
     //   故改为：仅 <0.3(情绪极弱/冰点) 才停推防接飞刀；0.3~0.4 不再减到1只，恢复正常发数。
     const _gateMsg=sentiment<0.3?'门禁·情绪极弱·今日不推荐':'';
     const _sentiN=(base)=>sentiment<0.3?0:base;  // <0.3 停推；≥0.3 一律按用户设定发数
-    const nTrendE=_sentiN(nTrend), nAucE=_sentiN(2), nIntraE=_sentiN(nIntra);
+    const nTrendE=_sentiN(nTrend), nAucE=_sentiN(1), nIntraE=_sentiN(nIntra);
     const _stTag=$('#sentiTrend');
     if(_stTag){
       _stTag.style.display='';
@@ -1016,7 +1016,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（强势拉升，非涨停）+ <b>2只竞价强势</b> + <b>${$('#nIntra').value||2}只盘中选股</b>（2日续涨·强势回踩，非涨停）。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（强势拉升，非涨停）+ <b>1只竞价强势</b> + <b>${$('#nIntra').value||2}只盘中选股</b>（2日续涨·强势回踩，非涨停）。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
