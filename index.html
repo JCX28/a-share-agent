@@ -735,16 +735,23 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hot=hotSector.has(s.hybk);
     const aw=wt('auction'); // 对账闭环可调权重（默认1=原策略；经"应用建议权重"写入 localStorage 后生效）
     let sc=0;
-    sc+=Math.min(Math.max(openGap,0)/lim,1)*34*aw.og; // 竞价撮合价高开距涨停（无前视主信号，回测：封板命中73% vs 高开基线16%）
+    sc+=Math.min(Math.max(openGap,0)/lim,1)*30*aw.og; // 竞价撮合价高开距涨停（无前视主信号；回测微降权，让位给5日动量）
     sc+=(openGap>=2&&openGap<=8)?16*aw.og:(openGap>0&&openGap<2)?(openGap/2)*9*aw.og:(openGap>8&&openGap<10)?(22-(openGap-8)*4)*aw.og:0; // 高开强度带(2~8%最佳)
-    sc+=(vr>=1.3&&vr<=3)?22*aw.vrMid:(vr>3)?34*aw.vrHi:(vr*10*aw.vrLo); // 量比·量能确认增强（昨日K线量比km.vr，9:26可知无前视；竞价与打板相反：量比越高封板率越高，回测9：>3封板24.4%优于1.2~3的8.5%）
-    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/40,1)*24*aw.chg5; // 前5日动量·动能确认增强（chg5≥25封板52%、≥10封板30%，顶格提高到24；9:26可知无前视）
+    // ★开盘即顶防火（用户方向A+B：曾连续买在竞价最高点→开盘即回落，锦和+9.2%开→-11%、赛力斯+6.8%开→-4%）。
+    //   竞价评分原逻辑"高开越多越加分"，把濒临涨停/超高开的"开盘即顶"票推到第一——而回测显示高开>8% 开→收-2.16%(买在顶部无上行空间)。
+    //   故：高开≥9.5%(濒临涨停,无上行空间)直接剔除；>8% 重罚(越高越罚)，引导回落到开收有空间的 2~8% 理想带。(9:25撮合价已知,无前视)
+    if(openGap>=9.5){ sc=-1e9; }                    // 开盘即顶(近涨停)：无上行空间，硬剔
+    else if(openGap>8){ sc-=(openGap-8)*20*aw.og; } // 高开过热：每超1分罚20，9%→-20、10%→-40，强制沉底
+    sc+=(vr>=1.3&&vr<=3)?18*aw.vrMid:(vr>3)?26*aw.vrHi:(vr*8*aw.vrLo); // 量比·量能确认（昨日K线量比km.vr，9:26无前视；回测降权：量比封板区分度弱，仅作辅助）
+    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/25,1)*32*aw.chg5; // ★前5日动量·动能主导（无前视实证：chg5≥10封板28-29% vs chg5<10仅10%；顶格32分成为核心信号）
+    if(km&&km.chg5>=10)sc+=10*aw.chg5; // 动量强势确认加成（chg5≥10封板率显著抬升，9:26无前视）
+    if(km&&km.ma5>km.ma10)sc+=4; // 均线多头加分（封板组多头率46% vs 非封板37%）
     if(km&&km.yestChg>=lim*0.97)sc+=10*aw.yestZt; // 昨日涨停→今日高开接力（无前视；回测：连板次日+0.49% vs 首板-0.24%）
     if(flow>0)sc+=Math.min(flow/5e8,1)*12*aw.flow; // 主力净流入
     if(hot)sc+=10*aw.hot; // 热门板块加分
-    sc+=sentiment*8*aw.senti; // 市场情绪加成
+    sc+=sentiment*6*aw.senti; // 市场情绪加成（回测降权：情绪对封板的边际区分有限）
     if(openGap<1.5)sc-=12*aw.smallPen; // 高开过小，距涨停太远
-    if(vr<1.5)sc-=18*aw.noVolPen; // 无量陷阱惩罚增强：昨日K线量比小于1.5未放量，强降权（滤除高开无量、冲高回落隐患）
+    if(vr<1.5)sc-=12*aw.noVolPen; // 无量惩罚：昨日K线量比小于1.5未放量，降权（滤除高开无量、冲高回落隐患）
     // 无量陷阱硬过滤增强：昨日K线量比<1.2且高开>2.5% = 高开无量→冲高回落的经典形态，直接剔除不复选。
     // ★兜底（用户反馈：曾因一次K线批量失败，!km分支把竞价整板剔空→0只）：仅当本轮竞价候选池"基本都没拿到K线"
     //   (有数据票数0)时，把"无数据裸高开"从硬剔降级为"保留但置最低分排到末尾"，宁可给保守建议也不让整板真空；
@@ -752,7 +759,8 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hasK=cands.filter(x=>klines[x.code]).length;
     const noKdata=hasK===0;                                    // 本轮竞价池几乎未取到任何K线(疑似上游批量失败)
     const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5&&!noKdata);
-    return {sc, openGap, vr, trap:noVolTrap, weak:(!km&&openGap>2.5&&noKdata)};
+    const momTrap=(km&&(km.chg5||0)<0); // ★5日动量向下→硬剔（无前视实证：chg5<0为崩票主力，封板率仅10%且易买在反弹高点回落）
+    return {sc, openGap, vr, trap:(noVolTrap||momTrap), weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
   // ★兜底续：把"无K线裸高开(weak)"票保留但置最低分，保证数据缺失时至少有几只可参考（排在正常票之后）
@@ -777,6 +785,9 @@ function auctionCard(p, rank, km){
   if(ogNum>3&&!isNaN(vr)&&vr>1.5)warn.push('<span class="rtag warn">高开放量·分歧大</span>');
   const retrace=pctNum-ogNum; // 当前涨幅相对竞价高开的回落幅度
   if(retrace<-3)warn.push(`<span class="rtag danger">竞价高开已回落${retrace.toFixed(1)}%·谨防炸板</span>`);
+  // 开盘即顶防火标签：极高高开被评分重罚(>8%)或硬剔(≥9.5%)的原因提示，避免误以为推荐但未见
+  if(ogNum>8&&ogNum<9.5)warn.push('<span class="rtag warn">开盘即顶·超高开重罚</span>');
+  if(ogNum>=9.5)warn.push('<span class="rtag danger">开盘即顶·近涨停无空间，已剔除</span>');
   const sealed=ogNum>0&&isFinite(retrace)&&retrace>=0&&pctNum>=detectLimitPct(p.name)*0.95-0.01; // 已封死涨停
   const niche=`今日涨<b>${pct}%</b>、竞价高开<b>${openGap}%</b>，${sealed?'已涨停封板·强势确认':'处于强势区但未封板/已回落，谨防炸板'}；`;
   return `<div class="pick">
