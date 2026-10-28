@@ -759,7 +759,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hasK=cands.filter(x=>klines[x.code]).length;
     const noKdata=hasK===0;                                    // 本轮竞价池几乎未取到任何K线(疑似上游批量失败)
     const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5&&!noKdata);
-    const momTrap=(km&&(km.chg5||0)<10); // ★5日动量<10→硬剔（无前视实证：chg5<10封板率仅5-13%是拖后腿主力；chg5≥10封板率38%且1日+1.6%转强。门槛提高后弱市会空仓=宁缺毋滥）
+    const momTrap=(km&&(km.chg5||0)<15); // ★5日动量<15→硬剔（55日实证：chg5门槛10→15为关键，封板率64%→69%、2日-1.20%→-0.77%；量比门槛贡献≈0已可去掉。门槛提高后弱市空仓=宁缺毋滥）
     return {sc, openGap, vr, trap:(noVolTrap||momTrap), weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
@@ -901,10 +901,11 @@ async function run(){
       .map(s=>({s,sc:prelimTrendScore(s)}))
       .sort((a,b)=>b.sc-a.sc).slice(0,40).map(x=>x.s);
     const trendCands=trendShort.map(s=>s.code);
-    // 竞价·强势候选：竞价高开≥1.5%（9:25撮合，9:26可知，无前视），按高开排序
+    // 竞价·强势候选：竞价高开≥4%（9:25撮合，9:26可知，无前视），按高开排序
+    // ★高开门槛 1.5%→4%（55日实证：og≥4 为封板甜点，封板69%；高开过低封板率拖后腿）。宁缺毋滥，弱市/无高开≥4%空仓。
     const auctionCands=stocks.filter(s=>{const l=detectLimitPct(s.name);
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
-      return og>=1.5&&og<l*0.95;})
+      return og>=4&&og<l*0.95;})
       .sort((a,b)=>{const oa=(+a.open&&+a.settlement)?((+a.open/+a.settlement-1)*100):0;const ob=(+b.open&&+b.settlement)?((+b.open/+b.settlement-1)*100):0;return ob-oa;}).slice(0,20);
     // 盘中·2日续涨·强势回踩候选：未涨停、涨幅健康、实时换手活跃、分时站上开盘价（全为盘中可得的实时数据）
     const intraShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
