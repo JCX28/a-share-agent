@@ -759,7 +759,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hasK=cands.filter(x=>klines[x.code]).length;
     const noKdata=hasK===0;                                    // 本轮竞价池几乎未取到任何K线(疑似上游批量失败)
     const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5&&!noKdata);
-    const momTrap=(km&&(km.chg5||0)<0); // ★5日动量向下→硬剔（无前视实证：chg5<0为崩票主力，封板率仅10%且易买在反弹高点回落）
+    const momTrap=(km&&(km.chg5||0)<10); // ★5日动量<10→硬剔（无前视实证：chg5<10封板率仅5-13%是拖后腿主力；chg5≥10封板率38%且1日+1.6%转强。门槛提高后弱市会空仓=宁缺毋滥）
     return {sc, openGap, vr, trap:(noVolTrap||momTrap), weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
