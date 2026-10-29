@@ -907,6 +907,9 @@ async function run(){
       return true;});
     const kNeed=Array.from(new Set([...limitCands,...trendCands,...auctionCands.map(s=>s.code),...intraShort.map(s=>s.code)]));
     const klines=await fetchKlines(kNeed);
+    // ★修复K线结构：fetchKlines返回原始{day,open,...}数组，但下方build/渲染/snapRecord读的是ma5/ma10/chg5/vr/yestChg等指标对象，
+    //   此前直接传raw导致这些因子恒为undefined(竞价chg5门槛/量比/均线/昨日涨停全部失效)。这里统一转成klineMetrics结果。
+    for(const _c in klines){ klines[_c]=klineMetrics(klines[_c]); }
     const intraMin=await fetchMinKlines(intraShort.map(s=>s.code)); // 5分钟线：9:35/9:40分钟级回踩因子（无前视）
     src.push('<li><span class="ok">✓</span> 5分钟线(9:35/9:40) <b>'+Object.keys(intraMin).length+'</b> 只（分钟级回踩）</li>');
     const kc=Object.keys(klines).length;
