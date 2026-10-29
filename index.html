@@ -931,11 +931,11 @@ async function run(){
     const _ztCnt=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95-0.01).length;
     const _upR=stocks.length?stocks.filter(s=>s.changepercent>0).length/stocks.length:0;
     const sentiment=Math.min(1,Math.max(0.2,_ztCnt/60*0.5+_upR*0.5));
-    // ★情绪门禁·只挡极弱、不挡弱（用户方向1，经前20日回测验证）：
-    //   回测显示"仅保留最强(0.3~0.4)"档胜率反而最高(54.2%)、"正常"档最差(40.6%)——弱市里选出的逆势强势票更强。
-    //   故改为：仅 <0.3(情绪极弱/冰点) 才停推防接飞刀；0.3~0.4 不再减到1只，恢复正常发数。
-    const _gateMsg=sentiment<0.3?'门禁·情绪极弱·今日不推荐':'';
-    const _sentiN=(base)=>sentiment<0.3?0:base;  // <0.3 停推；≥0.3 一律按用户设定发数
+    // ★情绪门禁·只挡极弱、不空仓（用户反馈：弱市多次无推荐，稍作放宽）：
+    //   回测显示"仅保留最强"档胜率反而更高——弱市里选出的逆势强势票更强，完全停推反而错过机会。
+    //   故：<0.3(情绪冰点) 收缩到每板块仅推最强1只(不空仓)；0.3~0.4 不再减量，恢复正常发数。
+    const _gateMsg=sentiment<0.3?'门禁·情绪极弱·仅推最强1只':'';
+    const _sentiN=(base)=>sentiment<0.3?Math.min(1,base):base; // <0.3 冰点收缩到1只；≥0.3 按用户设定
     const nTrendE=_sentiN(nTrend), nAucE=_sentiN(1), nIntraE=_sentiN(nIntra);
     const _stTag=$('#sentiTrend');
     if(_stTag){
@@ -977,9 +977,9 @@ async function run(){
 
     // 6) 渲染
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
-    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'今日不推荐：市场情绪极弱 · 人气不足，系统主动停推（避免弱市买顶）':'暂无当日强势大涨票')+'</div>';
+    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无当日强势大涨票')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
-    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'今日不推荐：市场情绪极弱 · 系统主动停推':'暂无符合条件的竞价强势票')+'</div>';
+    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无符合条件的竞价强势票')+'</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·分钟级回踩的票（需未涨停·非ST·竞价/开盘微高开0~1%·9:40较9:35回落·当日窄幅·换手活跃且无炸板）</div>';
     $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] 盘中选股对已选中票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶；仅9:40较9:35回落(分钟级回踩)才算买点。</div>');
