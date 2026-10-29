@@ -703,7 +703,7 @@ function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
   return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,n);
 }
 
-/* 竞价·强势确认：结合集合竞价高开强度 + 市场情绪 + 盘中炸板剔除，推荐1只主板强势股 */
+/* 竞价(降级)：高开≥4%且5日动量≥15的池内，按"高开最低"优先推1只（55日回测封板口径 top1 T+1胜率65%/均值+0.58%，小样本45仅参考） */
 function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap){
   flows=flows||{};
   if(!(hotSector instanceof Set))hotSector=new Set();
@@ -749,13 +749,13 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hasK=cands.filter(x=>klines[x.code]).length;
     const noKdata=hasK===0;                                    // 本轮竞价池几乎未取到任何K线(疑似上游批量失败)
     const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5&&!noKdata);
-    const momTrap=(km&&(km.chg5||0)<15); // ★5日动量<15→硬剔（55日实证：chg5门槛10→15为关键，封板率64%→69%、2日-1.20%→-0.77%；量比门槛贡献≈0已可去掉。门槛提高后弱市空仓=宁缺毋滥）
-    return {sc, openGap, vr, trap:(noVolTrap||momTrap), weak:(!km&&openGap>2.5&&noKdata)};
+    const momTrap=(km&&(km.chg5||0)<15); // 5日动量<15→硬剔
+    // ★降级：高开<4%不入池(回测og>=4封板37% vs 全市场2.78%)，高开≥9.5%开盘即顶无空间硬剔。
+    return {sc, openGap, vr, trap:(noVolTrap||momTrap||openGap<4||openGap>=9.5), weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
-  // ★兜底续：把"无K线裸高开(weak)"票保留但置最低分，保证数据缺失时至少有几只可参考（排在正常票之后）
-  scaled.forEach(x=>{ if(x.ev.weak) x.ev.sc=-1e9; });
-  scaled.sort((a,b)=>b.ev.sc-a.ev.sc);
+  // 降级：按"高开最低"优先（openGap升序；无K线裸高开的weak兜底票沉底在末尾，仅作数据缺失时参考），放弃原综合打分sc
+  scaled.sort((a,b)=>(a.ev.weak?1e9:a.ev.openGap)-(b.ev.weak?1e9:b.ev.openGap));
   return scaled.slice(0,Math.min(n,cands.length)).map(x=>{
     if(x.ev.weak)x.s._weak=true; // 标记：本轮K线缺失时的兜底裸高开票，供卡片提示"数据不足·仅供参考"
     return x.s;
@@ -979,7 +979,7 @@ async function run(){
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
     $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无当日强势大涨票')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
-    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无符合条件的竞价强势票')+'</div>';
+    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开4~9.5%且5日动量≥15，按高开最低优先推1只）')+'</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·分钟级回踩的票（需未涨停·非ST·竞价/开盘微高开0~1%·9:40较9:35回落·当日窄幅·换手活跃且无炸板）</div>';
     $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] 盘中选股对已选中票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶；仅9:40较9:35回落(分钟级回踩)才算买点。</div>');
