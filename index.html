@@ -115,7 +115,7 @@
     <div class="card">
       <h3>参数设置</h3>
       <div class="ctrl"><label>当日大涨潜力数（最多）</label><input type="number" id="nTrend" value="2" min="1" max="6"></div>
-      <div class="ctrl"><label>盘中选股数（最多）</label><input type="number" id="nIntra" value="2" min="1" max="6"></div>
+      <div class="ctrl"><label>T+1选股数（最多）</label><input type="number" id="nIntra" value="2" min="1" max="6"></div>
       <div class="ctrl"><label>自动刷新（分）</label>
         <select id="auto" style="width:90px;padding:5px;border:1px solid var(--line);border-radius:6px">
           <option value="0">关闭</option><option value="1">1</option>
@@ -150,7 +150,7 @@
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
     </div>
     <div class="group" id="gIntra">
-      <div class="ghead"><span class="t-orange">盘中选股 · 2日续涨·强势回踩（非涨停）</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
+      <div class="ghead"><span class="t-orange">T+1选股大涨 · 平开低吸</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
       <div class="picks" id="pIntra"><div class="empty">等待运行</div></div>
     </div>
     <div class="card">
@@ -621,15 +621,19 @@ function prelimTrendScore(s){ // 初选排序：换手+成交额+小市值+竞�
         +(openGap<1?8:(openGap<2)?2:-6); // 低高开有拉升空间，不高开加分（与终分一致）
 }
 
-/* ================== 盘中选股 · 2日续涨·分钟级回踩 ==================
-   回测结论（55交易日 × 3197只主板，9:35/9:40分钟级，无前视，分半验证防过拟合）：
-   - A股早盘"追涨"是确定负alpha：9:40仍在拉升、竞价高开≥2%、5/20日动量强、昨日涨停的票，T+1胜率仅36~44%。
-   - 唯一稳健正alpha = 「9:35冲高 → 9:40小幅回落(分钟级回踩)」+ 竞价/开盘微高开0~1% + 当日窄幅。
-   - 该过滤把全市场T+1胜率47%→约51%、均值+0.2%(未扣成本)；55-60%在分半验证下无法稳定复现，勿再上修。
-   硬过滤（全满足才入池）：非ST/非涨停/非炸板 + og∈[0,1%) + g40∈[-1,2%) + d40_35<0(9:40较9:35回落)。
-   排序：回踩-2~0最佳 + 竞价越近平开越好 + 换手/成交额/小市值/主力净流入辅助。 */
-function buildIntraPicks(cands, mins, flows, n){
-  cands=cands||[]; mins=mins||{}; flows=flows||{};
+/* ================== T+1选股大涨 · 平开低吸+强势加分 ==================
+   回测结论（55交易日 × 3197只主板，9:40买入、次日T+1、无前视、分半验证）：
+   - 网上主流"高收益"方案（华安首板回调 / 涨停回马枪 / 尾盘一夜持股法）落地为盘中9:40版后实测无稳定alpha：
+     近期涨停+回调池5573样本次日均值-0.03%（与全市场基准+0.08%持平），形态因子(缩量/10日线/半分位)盘中版全部失效。
+   - 55天区间beta主导(前牛后熊)：全池分半均不同向 → A股"盘中买入+T+1"无稳定择股alpha，勿信任何"高收益"口号。
+   - 但方向性证据明确（第5次独立验证）：追涨(高开≥2%/拉升/9:40仍冲高)期望-1~-6%为负；
+     低吸(平开og<1% + 盘中回调chg40<0)次日期望+0.23%~+0.30%，是数据相对最优方向。
+   - 次日大涨概率（标题所指"大涨"）：近期涨停/连板 + 换手≥3% 的池封板率3.3~4.4%(基准1.8%的2~2.4倍)、涨5%+8~9%。
+   → 落地：低吸为主信号(保证每日出票)，近期涨停/5日强势/换手活跃为加分(次日大涨概率)，浅回踩-2~-0.5最佳。
+   硬过滤（全满足才入池）：非ST/非涨停/非炸板 + og∈[0,3%) + g40∈[-3,2%)（回调企稳，非追涨）。
+   排序：浅回踩最佳 + 越近平开越好 + 近期涨停/连板强加分 + 换手/成交额/小市值/主力净流入辅助。 */
+function buildIntraPicks(cands, mins, klines, flows, n){
+  cands=cands||[]; mins=mins||{}; klines=klines||{}; flows=flows||{};
   // 硬过滤：排除ST / 已涨停 / 盘中炸板未回封
   cands=cands.filter(s=>{
     if(/ST/.test(s.name))return false;
@@ -644,43 +648,50 @@ function buildIntraPicks(cands, mins, flows, n){
     return true;
   });
   const evalq=(s)=>{
-    const m=mins[s.code]; const flow=flows[s.code]||0;
+    const m=mins[s.code]; const km=klines[s.code]; const flow=flows[s.code]||0;
     const settle=+s.settlement||0;
     const og=((+s.open&&settle)?((+s.open/settle-1)*100):null);           // 竞价/今开高开%
     const hs=+s.turnoverratio||0, amount=+s.amount||0, nmc=+s.nmc||0;
-    if(!settle||og==null||!(og>=0&&og<1))return null;                     // 竞价/开盘微高开[0,1%)才入池
+    if(!settle||og==null||!(og>=0&&og<3))return null;                     // 平开/微高开[0,3%)才入池(低吸留空间)
     if(!(m&&m.p35>0&&m.p40>0))return null;                                // 缺9:35/9:40分钟数据不选
     const g40=(m.p40/settle-1)*100;                                       // 9:40相对昨收涨幅
-    if(!(g40>=-1&&g40<2))return null;                                     // 当日窄幅[-1,2%)
+    if(!(g40>=-3&&g40<2))return null;                                     // 盘中回调/平盘企稳[-3,2%)，非追涨
     const d=(m.p40-m.p35)/m.p35*100;                                      // 9:35→9:40分钟级变化
-    if(!(d<0))return null;                                                 // 必须分钟级回踩(9:40较9:35回落)
+    const yestZt=km?((km.yestChg!=null&&km.yestChg>=9.7)):false;           // 昨日涨停(昨收可得，无前视)
+    const lbc=km?km.lbc:0;                                                // 连板数
+    const chg5=km?(km.chg5!=null?km.chg5:0):0;                            // 5日动量
+    const vr=km?km.vr:1;                                                  // 昨日量比
     let sc=0;
-    sc+=(d>=-2&&d<=-0.5)?12:(d>-0.5)?8:(d>=-5?4:-6);                      // 浅回踩留势最佳
-    sc+=(og<0.5)?6:((og<0.8)?3:0);                                        // 竞价越接近平开越好(留上行空间)
-    sc+=(g40>=0&&g40<=1.5)?4:0;
-    sc+=(hs>=3&&hs<=15)?8:(hs<1.5?-8:-3);                                 // 换手活跃但不过热
+    sc+=(d>=-2&&d<=-0.5)?12:(d>-0.5&&d<=0.5)?6:(d<-2?-2:0);               // 浅回踩-2~-0.5留势最佳(次日期望最高)
+    sc+=(og<0.5)?6:(og<1.5)?3:0;                                          // 越近平开越好(og<1次日期望最优)
+    sc+=(g40>=-2&&g40<0)?4:0;                                             // 盘中回调(非追涨)加分
+    if(yestZt||lbc>=1)sc+=10;                                             // 近期涨停/连板：次日封板率2.4倍基准(大涨加分)
+    if(chg5>=10)sc+=5;                                                    // 5日强势：次日大涨概率高
+    if(chg5<-5)sc-=6;                                                     // 5日走弱(接飞刀)降分
+    sc+=(hs>=3&&hs<=15)?8:(hs<1?-6:-2);                                   // 换手活跃但不过热(≥3%次日大涨概率翻倍)
     sc+=Math.log10(amount+1)/12.5*6;                                      // 成交额
     sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*6;                          // 小市值弹性
+    if(vr<1.2)sc-=4;                                                      // 昨日量能不足
     if(flow>0)sc+=Math.min(flow/5e8,1)*8;                                // 主力净流入
-    return {sc, og, g40, d};
+    return {sc, og, g40, d, yestZt, chg5};
   };
   const scaled=cands.map(s=>({s,e:evalq(s)})).filter(x=>x.e);
   scaled.sort((a,b)=>b.e.sc-a.e.sc);
-  return scaled.slice(0,n).map(x=>{ x.s._iog=x.e.og; x.s._ig40=x.e.g40; x.s._id=x.e.d; return x.s; });
+  return scaled.slice(0,n).map(x=>{ x.s._iog=x.e.og; x.s._ig40=x.e.g40; x.s._id=x.e.d; x.s._izt=x.e.yestZt; x.s._ichg5=x.e.chg5; return x.s; });
 }
 function intraCard(p, rank, km){
   const pct=p.changepercent.toFixed(2); const up=p.changepercent>=0;
   const chg=+p.changepercent||0; const lim=detectLimitPct(p.name);
   const ceilingSpace=(p.trade>0&&lim>0)?(lim/+p.trade-1)*100:0;
   const og=(p._iog!=null)?p._iog:((+p.open&&+p.settlement)?((+p.open/+p.settlement-1)*100):0);
-  const g40=p._ig40, d=p._id;
+  const g40=p._ig40, d=p._id, izt=p._izt, ichg5=p._ichg5;
   const name=p.name.replace('N','N·').replace('C','C·');
   const flow=p.flow;
-  const dLvl=(d!=null)?(d>=-2&&d<=-0.5?'浅回踩·留势':(d>-0.5?'微回落':(d>=-5?'回踩偏深':'回踩过深'))):'—';
+  const dLvl=(d!=null)?(d>=-2&&d<=-0.5?'浅回踩·留势':(d>-0.5&&d<=0.5?'平盘企稳':'分时走弱')):'—';
   const g40s=(g40!=null)?((g40>0?'+':'')+g40.toFixed(2)+'%'):'—';
   const ds=(d!=null)?((d>0?'+':'')+d.toFixed(2)+'%'):'—';
-  const why=`盘中<b>2日续涨·分钟级回踩</b>：开盘/竞价微高开<b>${og.toFixed(1)}%</b>（留上行空间），9:35→9:40 分时<b>${ds}</b>（${dLvl}）
-    ；9:40 较昨收 ${g40s}（当日窄幅、未追高），距涨停还有${ceilingSpace.toFixed(1)}%空间，换手${fmtW(+p.turnoverratio)}%，${flow?('主力'+(flow>0?'净流入'+fmtB(flow)+'亿':'净流出')):'资金面未更新'}。`;
+  const why=`盘中<b>T+1大涨博弈</b>：平开/微高开<b>${og.toFixed(1)}%</b>（低吸留空间），9:40 较昨收 ${g40s}（盘中回调企稳${d!=null?`，9:35→9:40 ${ds}（${dLvl}）`:''}）
+    ${izt||(ichg5&&ichg5>=10)?`，<b>${izt?'昨日涨停':'5日强势'}</b>（次日大涨概率≈基准2倍）`:''}，距涨停${ceilingSpace.toFixed(1)}%空间，换手${fmtW(+p.turnoverratio)}%，${flow?('主力'+(flow>0?'净流入'+fmtB(flow)+'亿':'净流出')):'资金面未更新'}。`;
   return `<div class="pick">
     <div class="rk">${rank}</div>
     <div class="top"><span class="nm">${name}</span><span class="cd">${p.code}</span>
@@ -690,12 +701,13 @@ function intraCard(p, rank, km){
       <div class="br"><div class="k">开盘高开</div><div class="v">${og.toFixed(1)}%</div></div>
       <div class="br"><div class="k">9:35→9:40</div><div class="v" style="color:${d<0?'var(--green)':'var(--red)'}">${ds}</div></div>
       <div class="br"><div class="k">9:40涨幅</div><div class="v">${g40s}</div></div>
-      <div class="br"><div class="k">距涨停</div><div class="v" style="color:${ceilingSpace<2?'var(--orange)':'var(--text)'}">${ceilingSpace.toFixed(1)}%</div></div>
+      <div class="br"><div class="k">昨日涨停</div><div class="v" style="color:${izt?'var(--orange)':'var(--text)'}">${izt?'是':'否'}</div></div>
+      <div class="br"><div class="k">5日动量</div><div class="v" style="color:${ichg5>=10?'var(--orange)':'var(--text)'}">${ichg5!=null?(ichg5>0?'+':'')+ichg5.toFixed(0)+'%':'—'}</div></div>
       <div class="br"><div class="k">换手率</div><div class="v">${fmtW(+p.turnoverratio)}%</div></div>
       <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${flow>0?'var(--red)':flow<0?'var(--green)':'var(--text)'}">${flow?fmtB(flow)+'亿':'—'}</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
     </div>
-    <div class="why">${why}<br><span style="color:#991b1b">⚠ 盘中选股为2日续涨博弈，仅供研究，非投资建议；破位/炸板须立即离场。</span></div>
+    <div class="why">${why}<br><span style="color:#991b1b">⚠ T+1选股为"低吸+强势"博弈（回测：平开回调池次日期望+0.23% vs 追涨池-1~-6%），仅供研究，非投资建议；破位/炸板须立即离场。</span></div>
   </div>`;
 }
 function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
@@ -911,13 +923,15 @@ async function run(){
       const fmc=(+s.nmc||0)/1e4;
       return og>=4&&og<l*0.95&&_aucAmtR(s)>=0.5&&!(fmc>0&&fmc>100);})
       .sort((a,b)=>_aucAmtR(b)-_aucAmtR(a)).slice(0,20);
-    // 盘中·2日续涨·分钟级回踩候选：非ST、未涨停、竞价/开盘微高开[0,1%)、换手活跃（均为盘中可得；9:35/9:40分钟级回踩在 buildIntraPicks 里用分钟线细筛）
+    // T+1选股大涨候选：平开/微高开[0,3%)、未涨停、换手≥1%（低吸留空间，非追涨；9:40 回调企稳+近期涨停加分在 buildIntraPicks 细筛）
+    // ★门槛放宽依据（回测55日、9:40买、次日T+1）：og<1 次日期望最优(+0.23%)但样本集中易空仓，放宽到 og<3 保证每日出票；
+    //   昨日涨停/连板/5日强势为加分（次日封板率≈基准2.4倍），不再硬过滤。
     const intraShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
       if(/ST/.test(s.name))return false;
       if((+s.changepercent||0)>=l*0.9)return false;
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):null;
-      if(og==null||og<0||og>=1)return false;
-      if((+s.turnoverratio||0)<2)return false;
+      if(og==null||og<0||og>=3)return false;
+      if((+s.turnoverratio||0)<1)return false;
       return true;});
     const kNeed=Array.from(new Set([...limitCands,...trendCands,...auctionCands.map(s=>s.code),...intraShort.map(s=>s.code)]));
     const klines=await fetchKlines(kNeed);
@@ -958,7 +972,7 @@ async function run(){
     }
     const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrendE, sentiment);
     const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE, ztMap);
-    let intraPicks=buildIntraPicks(intraShort, intraMin, flows, nIntraE);
+    let intraPicks=buildIntraPicks(intraShort, intraMin, klines, flows, nIntraE);
     // ★盘中冻结：buildIntraPicks是实时版块，auto-refresh每次都会换成"当前涨最高"的票=逐日内顶。
     //   选中后N分钟(COOL)内不换新票——仅当老票破位/涨停/炸板(离开intraShort候选池)才补新票，并标记"新选/延续/换新"。
     const COOL=10*60000; let _iMark='新选';
@@ -995,8 +1009,8 @@ async function run(){
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开4~9.5%、竞价换手率≥0.5%、流通市值≤100亿，按竞价换手率降序推1只）')+'</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
-    $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无盘中适合2日续涨·分钟级回踩的票（需未涨停·非ST·竞价/开盘微高开0~1%·9:40较9:35回落·当日窄幅·换手活跃且无炸板）</div>';
-    $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] 盘中选股对已选中票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶；仅9:40较9:35回落(分钟级回踩)才算买点。</div>');
+    $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的T+1大涨票（需平开/微高开0~3%、未涨停、9:40盘中回调企稳[-3,2%)、换手活跃且无炸板）</div>';
+    $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] T+1选股为"平开低吸+近期涨停/强势加分"，选中的票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶；仅9:40较9:35回落(分钟级回踩)才算低吸买点。</div>');
     // 时间守卫：当日大涨/竞价为9:26竞价时点选股；已过竞价窗口后，盘中重算的结果仅作参考——明示勿追高。
     const _n2=new Date(),_hm2=_n2.getHours()*60+_n2.getMinutes(),_wk2=_n2.getDay();
     if(!(_wk2>=1&&_wk2<=5&&_hm2>=545&&_hm2<=585)){
@@ -1015,7 +1029,7 @@ async function run(){
     __LASTPICK={auction:__autoAuction, trend:__autoTrend, intra:__autoIntra};
     maybeSaveSnap({auction:__autoAuction, trend:__autoTrend, intra:__autoIntra});
 
-    setStatus(`完成 · 当日大涨<b>${trendPicks.length}</b> + 竞价强势<b>${auctionPicks.length}</b> + 盘中选股<b>${intraPicks.length}</b>。`,'ok');
+    setStatus(`完成 · 当日大涨<b>${trendPicks.length}</b> + 竞价强势<b>${auctionPicks.length}</b> + T+1选股<b>${intraPicks.length}</b>。`,'ok');
   }catch(e){
     setStatus('执行失败：'+e.message,'bad');
     $('#src').innerHTML='<ul style="list-style:none;line-height:1.9">'+src.join('')+'</ul>';
@@ -1027,7 +1041,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（强势拉升，非涨停）+ <b>1只竞价强势</b> + <b>${$('#nIntra').value||2}只盘中选股</b>（2日续涨·强势回踩，非涨停）。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（强势拉升，非涨停）+ <b>1只竞价强势</b> + <b>${$('#nIntra').value||2}只T+1选股大涨</b>（平开低吸+近期涨停/强势加分）。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
@@ -1165,16 +1179,16 @@ async function reconcileReturns(){ // 对历史快照逐股计算"决策交易�
     if(idx<0)continue;
     const bar=kl[idx]; if(!(bar.o>0&&bar.c>0))continue;
     let intra, snapRet, r2;
-    if(x.g==='intra'){ // 盘中选股按"2日累计收益"考核：决策日开 → +2根完整bar收盘（隔2日）
-      const b2=kl[idx+2]; if(!b2||!(b2.o>0&&b2.c>0))continue; // 还未走完2日,暂不对账(下次增量补)
-      intra=(b2.c/bar.o-1)*100;                       // 2日累计：决策日开盘 → 第+2日收盘
-      snapRet=(!x.it.p||x.it.p<=0)?intra:(b2.c/x.it.p-1)*100; // 决策推荐价 → 第+2日收盘
+    if(x.g==='intra'){ // T+1选股按"次日收盘"考核：决策日开 → +1根完整bar收盘（次日）
+      const b2=kl[idx+1]; if(!b2||!(b2.o>0&&b2.c>0))continue; // 次日bar还未走完,暂不对账(下次增量补)
+      intra=(b2.c/bar.o-1)*100;                       // T+1：决策日开盘 → 次日收盘
+      snapRet=(!x.it.p||x.it.p<=0)?intra:(b2.c/x.it.p-1)*100; // 决策推荐价 → 次日收盘
       r2=+intra.toFixed(3);
     }else{
       intra=(bar.c/bar.o-1)*100;                      // 日内：开盘→收盘（推荐价开盘买入）
       snapRet=(!x.it.p||x.it.p<=0)?intra:(bar.c/x.it.p-1)*100; // 隔夜+日内：收盘/9:26快照推荐价
     }
-    newRets.push({date:x.date,g:x.g,c:x.it.c,n:x.it.n,p:x.it.p,open:bar.o,close:x.g==='intra'?(kl[idx+2]&&kl[idx+2].c||bar.c):bar.c,intra:+intra.toFixed(3),snapRet:+snapRet.toFixed(3),r2:r2!=null?r2:null});
+    newRets.push({date:x.date,g:x.g,c:x.it.c,n:x.it.n,p:x.it.p,open:bar.o,close:x.g==='intra'?(kl[idx+1]&&kl[idx+1].c||bar.c):bar.c,intra:+intra.toFixed(3),snapRet:+snapRet.toFixed(3),r2:r2!=null?r2:null});
     cnt++;
   }
   if(newRets.length){const cur=loadReturns(); saveReturns(cur.concat(newRets).slice(-2000));}
@@ -1253,7 +1267,7 @@ function renderSnaps(){
   const rmap=new Map(R.map(r=>[r.date+'|'+r.g+'|'+r.c,r]));
   const sum=(g)=>{const val=(r)=>g==='intra'?(r.r2!=null?r.r2:r.intra):r.intra; const a=R.filter(r=>r.g===g&&isFinite(val(r))); if(!a.length)return null; const win=a.filter(r=>val(r)>0).length; return {n:a.length,wr:(win/a.length*100).toFixed(1),avg:(a.reduce((x,r)=>x+val(r),0)/a.length).toFixed(2),avgR:(a.reduce((x,r)=>x+(isFinite(r.snapRet)?r.snapRet:0),0)/a.length).toFixed(2)};};
   const sa=sum('auction'), st=sum('trend'), si=sum('intra');
-  const stat=(sa&&st)?(`已对账 竞价 ${sa.n}·胜${sa.wr}%/均${sa.avg}% · 大涨 ${st.n}·胜${st.wr}%/均${st.avg}% · 盘中 ${si?si.n:0}·胜${si?si.wr+'%':'—'}/均${si?si.avg+'%':'—'}`):(sa||st||si)?'部分样本已对账，可继续增量对账。':'';
+  const stat=(sa&&st)?(`已对账 竞价 ${sa.n}·胜${sa.wr}%/均${sa.avg}% · 大涨 ${st.n}·胜${st.wr}%/均${st.avg}% · T+1 ${si?si.n:0}·胜${si?si.wr+'%':'—'}/均${si?si.avg+'%':'—'}`):(sa||st||si)?'部分样本已对账，可继续增量对账。':'';
   // 自动调参状态徽标（无人值守：对账出样本即自动写权重）
   let _wmeta=null; try{const _o=JSON.parse(localStorage.getItem('ashare_wts')||'{}')||{};_wmeta=_o._meta||null;}catch(e){}
   const _tuneTag=_wmeta?('<div style="font-size:11px;color:#9a3412;margin:4px 0">⚙ 自动调参已生效 · 上次'+( _wmeta.kind==='manual'?'手动应用':'自动调参' )+' '+new Date(_wmeta.t).toLocaleTimeString()+'（权重已写入对外·下次选股即时生效）</div>'):'<div style="font-size:11px;color:var(--muted);margin:4px 0">自动调参：每组已对账样本≥'+MIN_AUTO+'后，每次对账自动按分桶胜率微调权重并即时生效（无需人工确认）。</div>';
@@ -1270,11 +1284,11 @@ function renderSnaps(){
     +'<tr style="font-size:11.5px"><td style="padding:2px 6px">当日大涨</td>'
       +'<td style="text-align:center">'+(st?st.n:'—')+'</td><td style="text-align:center">'+(st?st.wr+'%':'—')+'</td>'
       +'<td style="text-align:center">'+(st?st.avg:'—')+'</td><td style="text-align:center">'+(st?st.avgR:'—')+'</td></tr>'
-    +'<tr style="font-size:11.5px"><td style="padding:2px 6px">盘中选股</td>'
+    +'<tr style="font-size:11.5px"><td style="padding:2px 6px">T+1选股</td>'
       +'<td style="text-align:center">'+(si?si.n:'—')+'</td><td style="text-align:center">'+(si?si.wr+'%':'—')+'</td>'
       +'<td style="text-align:center">'+(si?si.avg:'—')+'</td><td style="text-align:center">'+(si?si.avgR:'—')+'</td></tr>'
     +'</table></div>'
-    +'<div style="font-size:11.5px;margin-top:6px;line-height:1.6">点击"开始对账"用新浪日K计算各历史快照建议股收益并累计（竞价/当日大涨=次日开→收，盘中选股=决策日开→第+2日收盘的2日累计）；对账出样本后<b>自动调参</b>按分桶胜率微调权重并即时生效（无人值守，胜率<55%的失效因子自动降权、有上下限防发散），可随时"重置权重"回到原始策略。</div>'
+    +'<div style="font-size:11.5px;margin-top:6px;line-height:1.6">点击"开始对账"用新浪日K计算各历史快照建议股收益并累计（竞价/当日大涨=次日开→收，T+1选股=决策日开→次日收盘）；对账出样本后<b>自动调参</b>按分桶胜率微调权重并即时生效（无人值守，胜率<55%的失效因子自动降权、有上下限防发散），可随时"重置权重"回到原始策略。</div>'
     +'<div style="margin-top:8px">'
     +'<button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:6px 14px" onclick="doReconcile()">开始对账</button> '
     +'<button class="hbtn" style="border:1px solid #fca5a5;padding:6px 14px;color:#9a3412;background:#fff" onclick="doTune()">查看分桶 / 手动应用</button>'
@@ -1282,13 +1296,13 @@ function renderSnaps(){
     +'</div></div>';
 
   if(!arr.length){el.innerHTML=head+'<div class="empty">暂无存档。交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动保存当日各板块选股；非盘中可点上方按钮手动补录。</div>';return;}
-  const blk=(title,items,sp)=>{const g=title.indexOf('竞价')===0?'auction':(title.indexOf('盘中')===0?'intra':'trend'); const n=items?(items.length):0;
+  const blk=(title,items,sp)=>{const g=title.indexOf('竞价')===0?'auction':(title.indexOf('T+1')===0?'intra':(title.indexOf('盘中')===0?'intra':'trend')); const n=items?(items.length):0;
     const lis=(items&&items.length)?items.map(x=>{const r=rmap.get(sp.date+'|'+g+'|'+x.c);const dv=r?((g==='intra'?(r.r2!=null?r.r2:r.intra):r.intra)):null;const chip=r?('<span style="font-size:10px;color:'+(dv>=0?'var(--red)':'var(--green)')+';margin-left:4px">'+(dv>=0?'+':'')+dv+'%</span>'):'';return '<button class="sugbtn" onclick="analyzeByCode(\''+x.c+'\')">'+x.n+chip+'</button>';}).join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>';
     return '<div style="margin:4px 0"><div style="font-size:11px;color:var(--muted)">'+title+'（'+n+'）</div>'+lis+'</div>';};
   el.innerHTML=head+arr.map(sp=>'<div class="card" style="margin-bottom:10px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>'+sp.date+' <span style="color:var(--muted);font-size:12px">'+sp.t+'</span></b>'
     +'<span style="color:var(--muted);font-size:11px">'+(sp.date===todayKey()?'今日':'历史')+'</span></div>'
-    +blk('竞价强势',sp.auction,sp)+blk('当日大涨',sp.trend,sp)+blk('盘中选股',sp.intra,sp)
+    +blk('竞价强势',sp.auction,sp)+blk('当日大涨',sp.trend,sp)+blk('T+1选股',sp.intra,sp)
     +'</div>').join('');
 }
 async function doReconcile(){ const n=await reconcileReturns(); alert('对账完成：本次新增 '+n+' 条收益样本。'); }
