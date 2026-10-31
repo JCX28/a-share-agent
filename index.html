@@ -198,12 +198,12 @@ const fmtB=(v)=>{const b=v/1e8; return b>=100?b.toFixed(1):b>=10?b.toFixed(2):b.
 const fmtW=(v)=>typeof v==='number'?v.toFixed(2):'-';
 const isMainBoard=(code)=>/^(600|601|603|605|000|001|002)\d{3}$/.test(code); // 排除 300/301 创业板、688/689 科创板、8xx/4xx 北交所
 
-/* JSONP 加载器（绕过 CORS）。网关开启时优先走网关（经网关做CORS出口），失败自动降级直连 */
+/* JSONP 加载器（绕过 CORS）。有网关时优先走网关（统一出口），失败自动降级直连 */
 function jsonp(u, key='cb', timeout=15000){
   return new Promise((resolve,reject)=>{
     const cb='cb'+Math.random().toString(36).slice(2,10);
     const upUrl=u+'&'+key+'='+cb;              // 先把回调拼进上游URL（网关需代理含回调的完整URL）
-    const urls=GW_CFG.off?[upUrl]:[PX(upUrl),upUrl]; // 默认：网关优先，直连兜底
+    const urls=HAS_GW?[PX(upUrl),upUrl]:[upUrl]; // 有网关：网关优先、直连兜底；无网关：直连
     let idx=0;
     function tryNext(err){
       if(idx>=urls.length){trigger(err||new Error('加载失败'));return;}
@@ -218,9 +218,9 @@ function jsonp(u, key='cb', timeout=15000){
     tryNext();
   });
 }
-/* fetch 带重试。网关开启时优先经网关（缓存+统一出口），失败自动降级直连 */
+/* fetch 带重试。有网关时优先经网关（缓存+统一出口），失败自动降级直连 */
 async function fetchJson(url, tries=2){
-  if(GW_CFG.off)return fetchJsonRaw(url,tries);
+  if(!HAS_GW)return fetchJsonRaw(url,tries);   // 公网站点无本机网关：直接直连，不做无谓的 /proxy 探测
   // 网关：单次快速探测，失败立即降级直连（不睡眠），避免公开站点无网关时每个请求白白多等
   try{const r=await fetch(PX(url));if(r.ok)return await r.json();}catch(e){}
   return fetchJsonRaw(url,tries);
@@ -239,9 +239,17 @@ async function poolRange(start, end, conc, fn){
 }
 
 /* ================== 数据源 ================== */
-/* 本地数据网关：优先经 http://127.0.0.1:8126 统一出口（缓存+重试，解决 CORS/限流），失败自动降级直连。
-   可用 localStorage 关闭：gw_off='1'；改网关地址：gw='http://127.0.0.1:8126' */
-const GW_CFG=(()=>{try{return{base:(localStorage.getItem('gw')||'http://127.0.0.1:8126').trim(),off:localStorage.getItem('gw_off')==='1'};}catch(e){return{base:'http://127.0.0.1:8126',off:false};}})();
+/* 数据网关：仅本机开发用 http://127.0.0.1:8126（本地缓存/重试/跨域出口）；公网部署不依赖任何后端，
+   日K/5分钟线改走新浪 JSONP 版接口（script 注入不受 CORS 限制），因此纯静态站点即可手机访问。
+   localStorage 覆盖：gw='http://127.0.0.1:8126' 指定网关；gw_off='1' 关闭网关 */
+const GW_CFG=(()=>{
+  try{
+    const ls=(localStorage.getItem('gw')||'').trim();
+    const local=!location.hostname||/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname);
+    return {base: ls || (local?'http://127.0.0.1:8126':''), off: localStorage.getItem('gw_off')==='1'};
+  }catch(e){return{base:'http://127.0.0.1:8126',off:false};}
+})();
+const HAS_GW=!!GW_CFG.base&&!GW_CFG.off;   // 有可用网关（本机默认有；公网默认无 → 走 JSONP 兜底）
 const PX=(u)=>GW_CFG.off?u:(GW_CFG.base+'/proxy?u='+encodeURIComponent(u)+'&ttl=8');
 
 const SINA_BASE='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData';
@@ -270,13 +278,34 @@ async function findTradingDay(){
 }
 
 function mt(code){return /^6\d{5}$/.test(code)?'sh':'sz';}
-async function fetchKlines(codes, n=12){ // 新浪日K：{day,open,high,low,close,volume}，升序(旧→新)；替代被WAF封的腾讯
+/* 新浪 JSONP 版K线（api/jsonp_v2.php 返回 "var x=[...]"）：script 注入不受 CORS 限制，公网纯静态站点可直接取K线 */
+function jsonpVar(url, varName, timeout=15000){
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement('script'); let done=false;
+    const fin=(ok,err)=>{
+      if(done)return; done=true; clearTimeout(t); if(s.parentNode)s.remove();
+      const v=window[varName]; try{delete window[varName];}catch(e){window[varName]=undefined;}
+      ok?resolve(v):reject(err||new Error('加载失败'));
+    };
+    const t=setTimeout(()=>fin(false,new Error('超时')),timeout);
+    s.onload=()=>fin(true); s.onerror=()=>fin(false,new Error('加载失败'));
+    s.src=url; document.head.appendChild(s);
+  });
+}
+async function klineJsonp(ssym, scale, n){
+  const vn='_kv'+Math.random().toString(36).slice(2,9);
+  const u=`https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20${vn}=/CN_MarketData.getKLineData?symbol=${ssym}&scale=${scale}&ma=no&datalen=${n}`;
+  const j=await jsonpVar(u, vn, 12000);
+  return Array.isArray(j)?j:[];
+}
+async function fetchKlines(codes, n=12){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
   const out={};
   await poolRange(0, Math.max(0,codes.length-1), 7, async(i)=>{
-    const c=codes[i];
+    const c=codes[i]; const ssym=mt(c)+c;
     try{
-      const ssym = mt(c)+c;
-      const j=await fetchJson(`https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol=${ssym}&scale=240&ma=no&datalen=${n}`,2);
+      let j=[];
+      if(HAS_GW){ try{ j=await fetchJson(`https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol=${ssym}&scale=240&ma=no&datalen=${n}`,2); }catch(e){} }
+      if(!(Array.isArray(j)&&j.length)) j=await klineJsonp(ssym,240,n);
       if(Array.isArray(j)&&j.length){
         out[c]=j.map(r=>({d:r.day,o:+r.open,c:+r.close,h:+r.high,l:+r.low,v:+r.volume}));
       }
@@ -284,14 +313,15 @@ async function fetchKlines(codes, n=12){ // 新浪日K：{day,open,high,low,clos
   });
   return out;
 }
-async function fetchMinKlines(codes){ // 新浪5分钟线：提取当日 09:40 bar收盘价（盘中回调企稳判定，无前视）
+async function fetchMinKlines(codes){ // 5分钟线：提取当日 09:40 bar收盘价（盘中回调企稳判定，无前视）
   const out={};
   if(!codes||!codes.length)return out;
   await poolRange(0, Math.max(0,codes.length-1), 8, async(i)=>{
-    const c=codes[i];
+    const c=codes[i]; const ssym=mt(c)+c;
     try{
-      const ssym=mt(c)+c;
-      const j=await fetchJson(`https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol=${ssym}&scale=5&ma=no&datalen=60`,2);
+      let j=[];
+      if(HAS_GW){ try{ j=await fetchJson(`https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol=${ssym}&scale=5&ma=no&datalen=60`,2); }catch(e){} }
+      if(!(Array.isArray(j)&&j.length)) j=await klineJsonp(ssym,5,60);
       if(Array.isArray(j)&&j.length){
         let p40=null;
         for(const b of j){ const t=b.day||''; if(t.indexOf('09:40')>=0)p40=+b.close; }
