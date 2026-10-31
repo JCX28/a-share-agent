@@ -292,11 +292,13 @@ function jsonpVar(url, varName, timeout=15000){
     s.src=url; document.head.appendChild(s);
   });
 }
-async function klineJsonp(ssym, scale, n){
-  const vn='_kv'+Math.random().toString(36).slice(2,9);
-  const u=`https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20${vn}=/CN_MarketData.getKLineData?symbol=${ssym}&scale=${scale}&ma=no&datalen=${n}`;
-  const j=await jsonpVar(u, vn, 12000);
+async function jsonpVars(tpl, timeout=12000){ // tpl 中用 %VAR% 占位变量名，返回数组；用于新浪 jsonp_v2 接口
+  const vn='_v'+Math.random().toString(36).slice(2,9);
+  const j=await jsonpVar(tpl.replace('%VAR%',vn), vn, timeout);
   return Array.isArray(j)?j:[];
+}
+async function klineJsonp(ssym, scale, n){
+  return jsonpVars(`https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20%VAR%=/CN_MarketData.getKLineData?symbol=${ssym}&scale=${scale}&ma=no&datalen=${n}`);
 }
 async function fetchKlines(codes, n=12){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
   const out={};
@@ -331,13 +333,20 @@ async function fetchMinKlines(codes){ // 5分钟线：提取当日 09:40 bar收�
   });
   return out;
 }
-async function fetchMainFlow(codes){ // 新浪资金流：r0_net 为最近交易日主力净流入(元)；替代被封的东财push2
+async function fetchMainFlow(codes){ // 主力净流入(元)：有网关走新浪JSON接口；公网该接口无CORS，改用JSONP版
   const out={};
   await poolRange(0, Math.max(0,codes.length-1), 6, async(i)=>{
-    const c=codes[i];
+    const c=codes[i]; const q=`?page=1&num=1&sort=opendate&asc=0&daima=${mt(c)}${c}`;
     try{
-      const j=await fetchJson(`https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?page=1&num=1&sort=opendate&asc=0&daima=${mt(c)}${c}`,2);
-      if(Array.isArray(j)&&j.length&&j[0].r0_net!=null) out[c]=+j[0].r0_net; // 主力净流入(元)
+      let row=null;
+      if(HAS_GW){
+        try{const j=await fetchJson(`https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs${q}`,2); if(Array.isArray(j)&&j.length)row=j[0];}catch(e){}
+      }
+      if(!row){
+        const j=await jsonpVars(`https://vip.stock.finance.sina.com.cn/quotes_service/api/jsonp_v2.php/var%20%VAR%=/MoneyFlow.ssl_qsfx_zjlrqs${q}`,10000);
+        if(j.length)row=j[0];
+      }
+      if(row&&row.r0_net!=null) out[c]=+row.r0_net; // 主力净流入(元)
     }catch(e){}
   });
   return out;
