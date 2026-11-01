@@ -400,13 +400,39 @@ async function monKlines(code,n=70){
   if(m&&m[code]&&m[code].length)return {src:'新浪',kl:m[code]};
   throw new Error('K线获取失败');
 }
-/* 实时报价（东财 JSONP，fltt=2 已为小数） */
-async function monQuote(code){
-  const d=await jsonp(`https://push2.eastmoney.com/api/qt/stock/get?secid=${monSecid(code)}&fltt=2&invt=2&fields=f43,f44,f45,f46,f47,f48,f57,f58,f59,f60,f169,f170,f86`,'cb',10000);
+/* 实时报价：东财 JSONP 优先，失败回退腾讯行情（同为 script 注入，无需 CORS） */
+async function monQuoteEm(code){
+  const d=await jsonp(`https://push2.eastmoney.com/api/qt/stock/get?secid=${monSecid(code)}&fltt=2&invt=2&fields=f43,f44,f45,f46,f47,f48,f57,f58,f59,f60,f169,f170,f86`,'cb',6000);
   const x=d&&d.data; if(!x||x.f43==null)throw new Error('行情获取失败');
   const ts=monNum(x.f86), t=ts?(ts>1e12?ts:ts>1e9?ts*1000:0):0;
   return {name:String(x.f58||''),price:monNum(x.f43),high:monNum(x.f44),low:monNum(x.f45),open:monNum(x.f46),
     vol:monNum(x.f47),amount:monNum(x.f48),prev:monNum(x.f60),chg:monNum(x.f170),t};
+}
+function monQuoteTx(code){ // 腾讯 v_sh600519="…" 形式，脚本注入读取全局变量
+  return new Promise((resolve,reject)=>{
+    const key='v_'+mt(code)+code, s=document.createElement('script'); let done=false;
+    const fin=(ok,err)=>{
+      if(done)return; done=true; clearTimeout(t); if(s.parentNode)s.remove();
+      const raw=window[key]; try{delete window[key];}catch(e){window[key]=undefined;}
+      if(!ok||!raw)return reject(err||new Error('腾讯行情失败'));
+      const a=String(raw).split('~');
+      const tm=String(a[30]||'');
+      let t=0;
+      if(/^\d{14}$/.test(tm)){
+        t=new Date(+tm.slice(0,4),+tm.slice(4,6)-1,+tm.slice(6,8),+tm.slice(8,10),+tm.slice(10,12),+tm.slice(12,14)).getTime();
+      }
+      resolve({name:String(a[1]||''),price:+a[3]||0,high:+a[33]||0,low:+a[34]||0,open:+a[5]||0,
+        vol:+a[6]||0,amount:0,prev:+a[4]||0,chg:+a[32]||0,t});
+    };
+    const t=setTimeout(()=>fin(false,new Error('超时')),7000);
+    s.onload=()=>fin(true); s.onerror=()=>fin(false,new Error('加载失败'));
+    s.src='https://qt.gtimg.cn/q='+mt(code)+code+'&_='+Date.now();
+    document.head.appendChild(s);
+  });
+}
+async function monQuote(code){
+  try{return await monQuoteEm(code);}catch(e){}
+  return await monQuoteTx(code);
 }
 /* 历史分位统计（严格剔除当日） */
 function monStat(kl){
@@ -470,7 +496,7 @@ function monZones(open,st){
   return {buyLo,buyHi,sellLo,sellHi,stop:+stop.toFixed(2)};
 }
 /* 当日信号（优先级：止损 > 突破 > 卖区 > 买区 > 临近 > 等待） */
-function monSignal(price,st,z,vr,q){
+function monSignal(price,st,z,vr,q,hasQ){
   const d=new Date(),hm=d.getHours()*60+d.getMinutes(),w=d.getDay();
   const sess=(w>=1&&w<=5)&&((hm>=570&&hm<690)||(hm>=780&&hm<900));
   const qd=q&&q.t?monDs(new Date(q.t)):'';
@@ -478,6 +504,7 @@ function monSignal(price,st,z,vr,q){
   const trend=st.ma5!=null&&st.ma10!=null&&st.ma5>st.ma10;
   let key='wait',label='等待',tone='',hint='';
   if(!(price>0)){key='halt';label='无实时价 · 停牌/未成交';hint='未取到现价，区间仍按最近开盘价给出，仅供参照。';}
+  else if(!hasQ){key='nodata';label='实时行情暂不可用';hint='区间按最近收盘价估算；行情恢复后自动改用当日开盘价，触发时仍会提醒。';}
   else if(!live){key='closed';label='非交易时段 · 现价 '+price.toFixed(2);
     hint='区间已算好；开盘后自动按当日开盘价重算，触发时提醒。';}
   else if(price<=z.stop){key='stop';tone='stop';label='跌破止损 · 离场';
@@ -533,17 +560,21 @@ async function monResolve(kw){
 function monRender(){
   const st=MON.stat,q=MON.q,body=$('#monBody');
   if(!st){body.innerHTML='<div class="empty">历史样本不足（需≥20个交易日）。</div>';return;}
-  const lastClose=q&&q.prev>0?q.prev:st.lastClose;
-  const price=(q&&q.price>0)?q.price:lastClose;
-  const preOpen=!(q&&q.open>0);
-  const open=preOpen?lastClose:q.open;
+  const lastClose=(q&&q.prev>0)?q.prev:st.lastClose;
+  const lb=MON.kl&&MON.kl.length?MON.kl[MON.kl.length-1]:null;
+  const todayBar=(lb&&String(lb.d).slice(0,10)===monToday())?lb:null; // 当日未走完K线可兜底取开/收价
+  const hasQ=!!(q&&q.price>0);
+  const price=hasQ?q.price:(todayBar?todayBar.c:lastClose);
+  const openReal=(q&&q.open>0)?q.open:(todayBar&&todayBar.o>0?todayBar.o:0);
+  const preOpen=openReal<=0;
+  const open=preOpen?lastClose:openReal;
   const z=monZones(open,st);
   const vr=monVR(MON.kl);
-  const sig=monSignal(price,st,z,vr,q);
+  const sig=monSignal(price,st,z,vr,q,hasQ);
   const chg=q?q.chg:((price/lastClose-1)*100);
   const up=chg>=0;
   const priceC=up?'var(--red)':'var(--green)';
-  $('#monTag').textContent=(sig.live?'实时监测中':'非交易时段')+' · '+(MON.klSrc||'')+'日K';
+  $('#monTag').textContent=(sig.live?'实时监测中':(hasQ?'非交易时段':'行情异常·估算'))+' · '+(MON.klSrc||'')+'日K';
   $('#monTag').className='mon-tag '+(sig.live?'on':'off');
 
   const buyRate=st.zBuy?Math.round(st.zBuyWin/st.zBuy*100)+'%':'—';
