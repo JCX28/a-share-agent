@@ -417,12 +417,12 @@ function monQuoteTx(code){ // 腾讯 v_sh600519="…" 形式，脚本注入读�
       if(!ok||!raw)return reject(err||new Error('腾讯行情失败'));
       const a=String(raw).split('~');
       const tm=String(a[30]||'');
-      let t=0;
+      let ts=0;
       if(/^\d{14}$/.test(tm)){
-        t=new Date(+tm.slice(0,4),+tm.slice(4,6)-1,+tm.slice(6,8),+tm.slice(8,10),+tm.slice(10,12),+tm.slice(12,14)).getTime();
+        ts=new Date(+tm.slice(0,4),+tm.slice(4,6)-1,+tm.slice(6,8),+tm.slice(8,10),+tm.slice(10,12),+tm.slice(12,14)).getTime();
       }
       resolve({name:String(a[1]||''),price:+a[3]||0,high:+a[33]||0,low:+a[34]||0,open:+a[5]||0,
-        vol:+a[6]||0,amount:0,prev:+a[4]||0,chg:+a[32]||0,t});
+        vol:+a[6]||0,amount:0,prev:+a[4]||0,chg:+a[32]||0,t:ts});
     };
     const t=setTimeout(()=>fin(false,new Error('超时')),7000);
     s.onload=()=>fin(true); s.onerror=()=>fin(false,new Error('加载失败'));
@@ -574,7 +574,7 @@ function monRender(){
   const chg=q?q.chg:((price/lastClose-1)*100);
   const up=chg>=0;
   const priceC=up?'var(--red)':'var(--green)';
-  $('#monTag').textContent=(sig.live?'实时监测中':(hasQ?'非交易时段':'行情异常·估算'))+' · '+(MON.klSrc||'')+'日K';
+  $('#monTag').textContent=(sig.live?'实时监测中':(hasQ?'非交易时段':'无实时报价 · 按昨收估算'))+' · '+(MON.klSrc||'')+'日K';
   $('#monTag').className='mon-tag '+(sig.live?'on':'off');
 
   const buyRate=st.zBuy?Math.round(st.zBuyWin/st.zBuy*100)+'%':'—';
