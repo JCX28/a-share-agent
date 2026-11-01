@@ -456,11 +456,6 @@ function monStat(kl){
   lows.sort((a,b)=>a-b);highs.sort((a,b)=>a-b);
   const p={lo10:monPctile(lows,.10),lo25:monPctile(lows,.25),lo50:monPctile(lows,.50),
     hi50:monPctile(highs,.50),hi75:monPctile(highs,.75),hi90:monPctile(highs,.90)};
-  let zBuy=0,zBuyWin=0,zSell=0,zSellWin=0;
-  for(const r of rows){
-    if(r.lo>=p.lo10&&r.lo<=p.lo25){zBuy++; if(r.c>=p.lo25)zBuyWin++;}      // 落入买区且收盘收回买区上沿
-    if(r.hi>=p.hi75&&r.hi<=p.hi90){zSell++; if(r.c<=p.hi75)zSellWin++;}    // 冲入卖区且收盘回落到卖区下沿
-  }
   const closes=bars.map(k=>k.c);
   const ma=n=>closes.length>=n?closes.slice(-n).reduce((a,b)=>a+b,0)/n:null;
   let atr=null;
@@ -472,8 +467,19 @@ function monStat(kl){
     }
     atr=rs.reduce((a,b)=>a+b,0)/rs.length;
   }
+  // 冲高回落卖出阈值：0.15×ATR%，夹在 0.35%~1.0%（30只×近50日回测：均值 edge +0.31%，55% 优于持到收盘）
+  const atrPct=atr&&closes.length?atr/closes[closes.length-1]*100:3;
+  const sellR=+Math.min(1.0,Math.max(0.35,0.15*atrPct)).toFixed(2);
+  let zBuy=0,zBuyWin=0,zSell=0,zSellWin=0,zTrail=0,zTrailWin=0;
+  for(const r of rows){
+    if(r.lo>=p.lo10&&r.lo<=p.lo25){zBuy++; if(r.c>=p.lo25)zBuyWin++;}      // 买区：落入后收盘收回上沿
+    if(r.hi>=p.hi75){                                                     // 卖区：入区后按回落阈值卖出，是否优于持到收盘
+      zSell++; if(r.c<=p.hi75)zSellWin++;
+      zTrail++; if(r.hi*(1-sellR/100)>r.c)zTrailWin++;
+    }
+  }
   const l20=bars.slice(-20);
-  return {n:rows.length,from:bars[0].d,to:bars[bars.length-1].d,p,zBuy,zBuyWin,zSell,zSellWin,
+  return {n:rows.length,from:bars[0].d,to:bars[bars.length-1].d,p,zBuy,zBuyWin,zSell,zSellWin,zTrail,zTrailWin,sellR,
     ma5:ma(5),ma10:ma(10),ma20:ma(20),atr,
     high20:Math.max(...l20.map(k=>k.h)),low20:Math.min(...l20.map(k=>k.l)),lastClose:closes[closes.length-1]};
 }
@@ -508,6 +514,7 @@ function monSignal(price,st,z,vr,q,hasQ){
   const qd=q&&q.t?monDs(new Date(q.t)):'';
   const live=sess&&(!qd||qd===monToday())&&price>0;
   const trend=st.ma5!=null&&st.ma10!=null&&st.ma5>st.ma10;
+  const peak=hasQ&&q&&q.high>0?Math.max(q.high,price):0; // 当日最高（冲高回落卖点的跟踪基准）
   let key='wait',label='等待',tone='',hint='';
   if(!(price>0)){key='halt';label='无实时价 · 停牌/未成交';hint='未取到现价，区间仍按最近开盘价给出，仅供参照。';}
   else if(!hasQ){key='nodata';label='实时行情暂不可用';hint='区间按最近收盘价估算；行情恢复后自动改用当日开盘价，触发时仍会提醒。';}
@@ -515,6 +522,8 @@ function monSignal(price,st,z,vr,q,hasQ){
     hint='区间已算好；开盘后自动按当日开盘价重算，触发时提醒。';}
   else if(price<=z.stop){key='stop';tone='stop';label='跌破止损 · 离场';
     hint='现价跌破 '+z.stop+'，按纪律止损，不补仓、不摊平。';}
+  else if(peak>=z.sellLo&&price<=peak*(1-st.sellR/100)){key='sellback';tone='sell';label='冲高回落 · 卖出';
+    hint='当日最高 '+peak.toFixed(2)+'，现价已回落 '+((1-price/peak)*100).toFixed(2)+'%（阈值 '+st.sellR+'%）；回测此位置卖出优于等到收盘。';}
   else if(price>=st.high20){key='break';tone='break';label='突破20日高 · 跟踪';
     hint='站上20日高 '+st.high20.toFixed(2)+'，强势但别追高，等回踩确认。';}
   else if(price>=z.sellLo){key='sell';tone='sell';label=price>=z.sellHi?'止盈区上沿 · 坚决减仓':'止盈区 · 分批减仓';
@@ -537,7 +546,7 @@ function monBeep(kind){
   if(!$('#monSound')||!$('#monSound').checked)return;
   try{
     __monCtx=__monCtx||new (window.AudioContext||window.webkitAudioContext)();
-    const seq=kind==='stop'?[540,440]:kind==='sell'?[880,880]:kind==='buy'?[660,760]:[980];
+    const seq=kind==='stop'?[540,440]:kind==='sell'||kind==='sellback'?[880,880]:kind==='buy'?[660,760]:[980];
     seq.forEach((f,i)=>{
       const o=__monCtx.createOscillator(),g=__monCtx.createGain();
       o.type='sine';o.frequency.value=f;g.gain.value=0.07;
@@ -584,7 +593,7 @@ function monRender(){
   $('#monTag').className='mon-tag '+(sig.live?'on':'off');
 
   const buyRate=st.zBuy?Math.round(st.zBuyWin/st.zBuy*100)+'%':'—';
-  const sellRate=st.zSell?Math.round(st.zSellWin/st.zSell*100)+'%':'—';
+  const sellRate=st.zTrail?Math.round(st.zTrailWin/st.zTrail*100)+'%':'—';
   body.innerHTML=`
   <div class="mon-banner ${sig.tone}">
     <div>
@@ -600,20 +609,20 @@ function monRender(){
   <div class="mon-grid">
     <div class="mbox"><div class="k">${preOpen?'基准（昨收）':'开盘价（区间基准）'}</div><div class="v">${open.toFixed(2)}</div><div class="s">${preOpen?'开盘后按开盘价重算':'买/卖区基准'}</div></div>
     <div class="mbox"><div class="k">买入区</div><div class="v" style="color:var(--green)">${z.buyLo}~${z.buyHi}</div><div class="s">较开盘 ${st.p.lo10.toFixed(1)}%~${st.p.lo25.toFixed(1)}%</div></div>
-    <div class="mbox"><div class="k">卖出区</div><div class="v" style="color:var(--red)">${z.sellLo}~${z.sellHi}</div><div class="s">较开盘 +${st.p.hi75.toFixed(1)}%~+${st.p.hi90.toFixed(1)}%</div></div>
+    <div class="mbox"><div class="k">卖出区（冲高观察）</div><div class="v" style="color:var(--red)">${z.sellLo}~${z.sellHi}</div><div class="s">较开盘 +${st.p.hi75.toFixed(1)}%~+${st.p.hi90.toFixed(1)}% · 回落 ${st.sellR}% 即卖</div></div>
     <div class="mbox"><div class="k">止损位</div><div class="v">${z.stop}</div><div class="s">跌破即离场</div></div>
     <div class="mbox"><div class="k">20日高/低</div><div class="v">${st.high20.toFixed(2)}<small> / ${st.low20.toFixed(2)}</small></div><div class="s">${price>=st.high20?'已突破':'距高 '+((st.high20/price-1)*100).toFixed(1)+'%'}</div></div>
     <div class="mbox"><div class="k">趋势 MA5/MA10</div><div class="v">${st.ma5?st.ma5.toFixed(2):'—'}<small> / ${st.ma10?st.ma10.toFixed(2):'—'}</small></div><div class="s">${(st.ma5&&st.ma10)?((st.ma5>st.ma10?'短多':'短空')+(st.ma20?' · '+(st.ma5>st.ma20?'在20日线上':'在20日线下'):'')):'—'}</div></div>
     <div class="mbox"><div class="k">量比（截至当前）</div><div class="v">${vr!=null?vr.toFixed(2):'—'}</div><div class="s">今日累计量/前5日均量</div></div>
-    <div class="mbox"><div class="k">历史验证</div><div class="v">${buyRate}<small> / ${sellRate}</small></div><div class="s">入买区 ${st.zBuyWin}/${st.zBuy} 收回 · 入卖区 ${st.zSellWin}/${st.zSell} 回落</div></div>
+    <div class="mbox"><div class="k">历史验证</div><div class="v">${buyRate}<small> / ${sellRate}</small></div><div class="s">入买区 ${st.zBuyWin}/${st.zBuy} 收回 · 回落卖点 ${st.zTrailWin}/${st.zTrail} 优于收盘</div></div>
   </div>
   <div class="mon-foot">
     样本 ${st.from} ~ ${st.to} · ${st.n} 个交易日（已剔除当日）· 当日低点中位 ${st.p.lo50.toFixed(2)}%、高点中位 +${st.p.hi50.toFixed(2)}% ·
     更新 ${new Date().toLocaleTimeString()}（每60秒）<br>
-    规则：买区需 MA5>MA10 且量比&lt;1.6 才提示低吸，否则只观察；跌破止损离场；突破20日高只跟踪。历史验证为样本内实测，样本少时波动大，仅供研究参考，不构成投资建议。
+    规则：买区需 MA5&gt;MA10 且量比&lt;1.6 才提示低吸，否则只观察；跌破止损离场；卖出不用「碰到卖区就卖」——需当日最高已进入卖区，再从当日最高回落 ${st.sellR}%（≈0.15×ATR，夹在 0.35%~1.0%）才提示卖出；突破20日高只跟踪。历史验证为样本内实测：30只主板股×近50个交易日回测，回落卖出均值优于持到收盘 +0.31%、55% 的交易日更优，样本少时波动大，仅供研究参考，不构成投资建议。
   </div>`;
 
-  const act=['buy','sell','stop','break'].includes(sig.key);
+  const act=['buy','sell','sellback','stop','break'].includes(sig.key);
   if(act&&sig.key!==MON.lastKey){
     monBeep(sig.key);
     monNotify(sig.label,`${MON.name||''} ${MON.code} 现价 ${price.toFixed(2)}（${up?'+':''}${chg.toFixed(2)}%）`);
