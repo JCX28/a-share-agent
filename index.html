@@ -962,6 +962,7 @@ function pickCard(p, rank, isLimit, km){
   const limit=detectLimitPct(p.name);
   const pct=p.changepercent.toFixed(2);
   const up=p.changepercent>=0;
+  const og=(+p.open&&+p.settlement)?((+p.open/+p.settlement-1)*100):null; // 开盘涨幅（相对昨收）
   const zt=isLimit;
   const lbc=+p.lbc||1;
   const risks=[];
@@ -982,7 +983,7 @@ function pickCard(p, rank, isLimit, km){
     parts.push(`换手${fmtW(+p.hs)}%、流通市值${fmtW_b(p.ltsz)}亿，${(+p.hs||0)>25?'分歧偏大注意承接':'人气较健康'}。`);
   }else{
     const vr=km?km.vr:NaN;
-    parts.push(`<b>模式要点·当天大涨：</b>今日现涨${pct}% 强势拉升、未涨停，有望当日继续冲高；`);
+    parts.push(`<b>模式要点·当天大涨：</b>今日开盘${og!=null?(og>0?'+':'')+og.toFixed(2)+'%、':''}现涨${pct}% 强势拉升、未涨停，有望当日继续冲高；`);
     if(km&&isFinite(vr))parts.push(`量比${fmtW(vr)}、${p._iburst?'昨日爆量（≥近5日均量3倍）——近50日回测多为一日游：当日冲高回落、次日平均 -0.9%，已降权，不建议追':(vr>=2?'明显放量但未失控，资金进场（课程31/32 跟随资金）':(vr>=1.2?'温和放量，资金进场':'量能一般'))}；`);
     parts.push(`换手${fmtW(+p.turnoverratio)}%、成交${fmtW_b(p.amount)}亿，人气与资金为${(+p.turnoverratio||0)>6?'活跃':'中上'}；`);
     if(p.flow){parts.push(`今日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'主力加仓，跟随资金（课程31/32）':'主力净流出，谨慎接力'}；`);}
@@ -995,6 +996,7 @@ function pickCard(p, rank, isLimit, km){
       <span class="pr ${up?'up':'down'}">${p.trade} ${up?'+':''}${pct}%</span></div>
     <div class="bestrows">
       <div class="br"><div class="k">${zt?'状态':'涨跌幅'}</div><div class="v">${zt?(lbc<=1?'首板':lbc+'板'):pct+'%'}</div></div>
+      ${!zt?`<div class="br"><div class="k">开盘涨幅</div><div class="v" style="color:${og>0?'var(--red)':og<0?'var(--green)':'var(--text)'}">${og!=null?(og>0?'+':'')+og.toFixed(2)+'%':'—'}</div></div>`:''}
       ${zt?`<div class="br"><div class="k">封单(亿)</div><div class="v">${fmtW_b(p.fund)}</div></div>`:''}
       <div class="br"><div class="k">换手率</div><div class="v">${fmtW(+p.turnoverratio)}%</div></div>
       ${km?`<div class="br"><div class="k">量比</div><div class="v">${fmtW(km.vr)}</div></div>`:''}
