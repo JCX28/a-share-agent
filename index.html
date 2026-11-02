@@ -768,6 +768,9 @@ function monResume(){
     if(cand&&cand.c){
       $('#monCode').value=cand.c+' '+(cand.n||'');
       startMon(cand.c,true).catch(()=>{});
+    }else{ // 连快照也没有：用默认标的占位，保证打开就能看到买/卖结论
+      $('#monCode').value='600519';
+      startMon('600519',true).catch(()=>{});
     }
   }catch(e){}
 }
