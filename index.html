@@ -761,12 +761,15 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天�
     sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*4*tw.nmc;   // 小市值（弱化）
     if(flow>0)sc+=Math.min(flow/5e8,1)*8*tw.flow;        // 主力净流入
     if(chg<0)sc-=15;                               // 走弱
-    // ★爆发巨量（用户新因子）：今日量≥近5日均量3倍(vr≥3) 且 当日涨幅为正 = 资金真爆发（防下跌放量/出货）
-    //   盘中自动刷新时 km.vr 随当日成交量实时更新；9:26竞价时无今日量比则恒false → 无前视合规
-    //   权重+10（回测13：爆量票当日涨幅含前视不可买，追进次日约-0.19%；仅轻加分不主导排序）
-    const burstVol=(km&&km.vr!=null&&km.vr>=3&&chg>0);
-    if(burstVol)sc+=10;
-    s._iburst=burstVol;
+    // ★量能分档（2026-11 回测：3152只主板 × 近50个交易日，24100样本）：
+    //   昨量比 1.2~3 = 资金进场但未到兑现，当日开→收 -0.16%~+0.11%、日内冲高≥3% 占26%~36%，是相对最优区间 → 温和加分；
+    //   昨量比 ≥3（爆量）多为一日游：当日开→收 -0.19%、次日 -0.90%；「爆量+高开≥1%」当日 -1.09%、胜率仅33%
+    //   → 取消原「爆发巨量 +10」加分（该因子会把爆量高开票顶到前排，实测拖累当日与次日），改为降权 + 仅作风险标注。
+    //   盘中早盘 vr 是今日累计量（口径不同，回测14 已证明早盘放量隔日为负），故分档只在竞价/收盘口径生效。
+    const burstVol=!!(km&&!km.intraday&&km.vr!=null&&km.vr>=3);
+    const volMild=!!(km&&!km.intraday&&km.vr!=null&&km.vr>=1.2&&km.vr<3);
+    if(burstVol)sc-=6*tw.vr; else if(volMild)sc+=5*tw.vr;
+    s._iburst=burstVol; s._imod=volMild;
     return sc;
   };
   const scaled=arr.map(s=>({s,sc:score(s)}));
@@ -1004,7 +1007,7 @@ function pickCard(p, rank, isLimit, km){
   }else{
     const vr=km?km.vr:NaN;
     parts.push(`<b>模式要点·当天大涨：</b>今日现涨${pct}% 强势拉升、未涨停，有望当日继续冲高；`);
-    if(km&&isFinite(vr))parts.push(`量比${fmtW(vr)}、${p._iburst?'爆发巨量（今日成交≥近5日均量3倍且上涨）——资金集中，注意当日已涨幅较大、追高有次日回落风险（回测13：尾盘追进次日约-0.2%）':(vr>=1.5?'明显放量，资金进场（课程31/32 跟随资金）':'量能一般')}；`);
+    if(km&&isFinite(vr))parts.push(`量比${fmtW(vr)}、${p._iburst?'昨日爆量（≥近5日均量3倍）——近50日回测多为一日游：当日冲高回落、次日平均 -0.9%，已降权，不建议追':(vr>=2?'明显放量但未失控，资金进场（课程31/32 跟随资金）':(vr>=1.2?'温和放量，资金进场':'量能一般'))}；`);
     parts.push(`换手${fmtW(+p.turnoverratio)}%、成交${fmtW_b(p.amount)}亿，人气与资金为${(+p.turnoverratio||0)>6?'活跃':'中上'}；`);
     if(p.flow){parts.push(`今日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'主力加仓，跟随资金（课程31/32）':'主力净流出，谨慎接力'}；`);}
     if(km){parts.push(`5日涨幅${fmtW(km.chg5)}%，均线${km.broke10?'已破10日〈风险〉':'位于MA5/MA10上方〈多头〉'}（主板破10日线止损·指南）；`);}
@@ -1019,7 +1022,7 @@ function pickCard(p, rank, isLimit, km){
       ${zt?`<div class="br"><div class="k">封单(亿)</div><div class="v">${fmtW_b(p.fund)}</div></div>`:''}
       <div class="br"><div class="k">换手率</div><div class="v">${fmtW(+p.turnoverratio)}%</div></div>
       ${km?`<div class="br"><div class="k">量比</div><div class="v">${fmtW(km.vr)}</div></div>`:''}
-      ${p._iburst?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--red)">爆发巨量</div></div>`:''}
+      ${p._iburst?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--orange)">爆量·防一日游</div></div>`:p._imod?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--red)">温和放量</div></div>`:''}
       <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
       <div class="br"><div class="k">流通市值</div><div class="v">${fmtW_b(p.ltsz||p.nmc*1e4)}亿</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
