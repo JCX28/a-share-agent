@@ -546,9 +546,17 @@ function monSignal(price,st,z,vr,q,hasQ,mkt,wb){
   else if(!live){
     key='closed';
     const inBuy=price>=z.buyLo&&price<=z.buyHi, inSell=price>=z.sellLo, belowStop=price<=z.stop;
-    label=belowStop?'可卖出 · 收盘已破止损':inSell?((mktWeak||wbSell)?'可卖出 · 收盘在卖区（弱势先兑现）':'可卖出 · 收盘在卖区（明日冲高兑现）'):inBuy?(mktStrong&&wbBuy?'可买入 · 收盘在买区（环境偏多）':'可买入 · 收盘在买区'):'观望 · 收盘未到买卖区';
-    hint='按今日区间：买区 '+z.buyLo+'~'+z.buyHi+'、卖区 '+z.sellLo+'~'+z.sellHi+'。'
-      +(belowStop?'已破止损，明日开盘离场、不补仓。':inSell?((mktWeak||wbSell)?(mktTxt+'、'+wbTxt+' 偏空，明日开盘即兑现，不等冲高。'):(mktTxt+'、'+wbTxt+' 偏多，明日冲高再兑现，别开盘就砸。')):inBuy?('明日回踩买区不破为低吸机会（'+mktTxt+(wbTxt?'、'+wbTxt:'')+'）'+((mktWeak||wbSell)?'，但环境偏空，等大盘转稳再动手。':'。'):'距买区 '+((price>z.buyHi)?((price/z.buyHi-1)*100).toFixed(2)+'%':'—')+'、距卖区 +'+((z.sellLo/price-1)*100).toFixed(2)+'%。');
+    const envBad=mktWeak||wbSell, envGoodStrong=!!(mktStrong&&wbBuy);
+    if(belowStop){label='可卖出 · 收盘已破止损';}
+    else if(inSell){label='可卖出 · 收盘在卖区（'+(envBad?'弱势先兑现':'明日冲高兑现')+'）';}
+    else if(inBuy){label='可买入 · 收盘在买区'+(envGoodStrong?'（环境偏多）':'');}
+    else{label='观望 · 收盘未到买卖区';}
+    let tail='';
+    if(belowStop)tail='已破止损，明日开盘离场、不补仓。';
+    else if(inSell)tail=envBad?(mktTxt+'、'+wbTxt+' 偏空，明日开盘即兑现，不等冲高。'):(mktTxt+'、'+wbTxt+' 偏多，明日冲高再兑现，别开盘就砸。');
+    else if(inBuy)tail='明日回踩买区不破为低吸机会（'+mktTxt+(wbTxt?'、'+wbTxt:'')+'）'+(envBad?'，但环境偏空，等大盘转稳再动手。':'。');
+    else tail='距买区 '+((price>z.buyHi)?((price/z.buyHi-1)*100).toFixed(2)+'%':'—')+'、距卖区 +'+((z.sellLo/price-1)*100).toFixed(2)+'%。';
+    hint='按今日区间：买区 '+z.buyLo+'~'+z.buyHi+'、卖区 '+z.sellLo+'~'+z.sellHi+'。'+tail;
   }
   else if(price<=z.stop){key='stop';tone='stop';label='可卖出 · 跌破止损离场';
     hint='现价跌破 '+z.stop+'，按纪律止损，不补仓、不摊平'+(mktWeak?'（'+mktTxt+'，弱市别扛）':'')+'。';}
