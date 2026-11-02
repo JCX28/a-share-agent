@@ -537,6 +537,7 @@ function monFlow(vr,wb,wbSlope,price,open){
   else if(vol==='缩量'&&wb>=15&&falling){state='缩量托单';buyGate=true;hint='缩量回踩+买盘托单，抛压不大，止跌可低吸。';}
   else if(vol==='放量'&&wb>=15&&falling){state='换手偏大';buyGate=false;hint='放量回踩虽有托单，但换手过大，等缩量再看。';}
   else if(vol==='缩量'&&wb<=-15){state='买盘偏弱';buyGate=false;hint='缩量且卖压占优，缺少承接，观望。';}
+  else if(wb>=70&&rising){state='过热托单';buyGate=false;sellUrge=true;hint='委比≥70% 属极端买盘挂单，多是诱多，冲高优先兑现，别追。';}
   else if(vol!=='缩量'&&wb>=15&&rising){state='量价配合';buyGate=true;hint='放量上涨+买盘占优，趋势健康，但别追高。';}
   else if(rising&&wb<0&&wb>-70){state='压单被吃';buyGate=true;hint='上涨中委比为负，多为主动买单吃掉卖档压单，不按看空处理（结合量能确认）。';}
   else if(wb<=-70){state='极端压单';buyGate=false;sellUrge=true;hint='卖档几乎清空式压单（或近跌停），流动性风险大。';}
