@@ -96,6 +96,11 @@
   .mon-banner.sell{background:#fff8f3;border-left-color:#dc6803}
   .mon-banner.stop{background:#fef3f2;border-left-color:#d92d20}
   .mon-banner.break{background:#eff4ff;border-left-color:#2563eb}
+  .mon-banner .act{min-width:54px;text-align:center;font-size:15px;font-weight:800;padding:7px 10px;border-radius:8px;
+    background:#f2f4f7;color:#475467;letter-spacing:2px;flex-shrink:0}
+  .mon-banner.a-buy .act{background:#0f7b3f;color:#fff}
+  .mon-banner.a-sell .act{background:var(--red);color:#fff}
+  .mon-banner.a-hold .act{background:var(--blue);color:#fff}
   .mon-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:12px}
   .mbox{background:var(--soft);border-radius:8px;padding:10px}
   .mbox .k{font-size:10.5px;color:var(--muted)}
@@ -388,39 +393,69 @@ async function monKlines(code,n=70){
   if(m&&m[code]&&m[code].length)return {src:'新浪',kl:m[code]};
   throw new Error('K线获取失败');
 }
-/* 实时报价：东财 JSONP 优先，失败回退腾讯行情（同为 script 注入，无需 CORS） */
+/* 实时报价：腾讯优先（可同时拿到五档买/卖量→委比），失败回退东财 */
 async function monQuoteEm(code){
   const d=await jsonp(`https://push2.eastmoney.com/api/qt/stock/get?secid=${monSecid(code)}&fltt=2&invt=2&fields=f43,f44,f45,f46,f47,f48,f57,f58,f59,f60,f169,f170,f86`,'cb',6000);
   const x=d&&d.data; if(!x||x.f43==null)throw new Error('行情获取失败');
   const ts=monNum(x.f86), t=ts?(ts>1e12?ts:ts>1e9?ts*1000:0):0;
   return {name:String(x.f58||''),price:monNum(x.f43),high:monNum(x.f44),low:monNum(x.f45),open:monNum(x.f46),
-    vol:monNum(x.f47),amount:monNum(x.f48),prev:monNum(x.f60),chg:monNum(x.f170),t};
+    vol:monNum(x.f47),amount:monNum(x.f48),prev:monNum(x.f60),chg:monNum(x.f170),t,weibi:null};
 }
-function monQuoteTx(code){ // 腾讯 v_sh600519="…" 形式，脚本注入读取全局变量
+function monTxLoad(sym){ // 腾讯 v_xxx="…" 形式，脚本注入读取全局变量（股票/指数通用）
   return new Promise((resolve,reject)=>{
-    const key='v_'+mt(code)+code, s=document.createElement('script'); let done=false;
-    const fin=(ok,err)=>{
+    const key='v_'+sym, s=document.createElement('script'); let done=false;
+    const fin=(ok)=>{
       if(done)return; done=true; clearTimeout(t); if(s.parentNode)s.remove();
       const raw=window[key]; try{delete window[key];}catch(e){window[key]=undefined;}
-      if(!ok||!raw)return reject(err||new Error('腾讯行情失败'));
-      const a=String(raw).split('~');
-      const tm=String(a[30]||'');
-      let ts=0;
-      if(/^\d{14}$/.test(tm)){
-        ts=new Date(+tm.slice(0,4),+tm.slice(4,6)-1,+tm.slice(6,8),+tm.slice(8,10),+tm.slice(10,12),+tm.slice(12,14)).getTime();
-      }
-      resolve({name:String(a[1]||''),price:+a[3]||0,high:+a[33]||0,low:+a[34]||0,open:+a[5]||0,
-        vol:+a[6]||0,amount:0,prev:+a[4]||0,chg:+a[32]||0,t:ts});
+      if(!ok||!raw)return reject(new Error('腾讯行情失败'));
+      resolve(String(raw).split('~'));
     };
-    const t=setTimeout(()=>fin(false,new Error('超时')),7000);
-    s.onload=()=>fin(true); s.onerror=()=>fin(false,new Error('加载失败'));
-    s.src='https://qt.gtimg.cn/q='+mt(code)+code+'&_='+Date.now();
+    const t=setTimeout(()=>fin(false),7000);
+    s.onload=()=>fin(true); s.onerror=()=>fin(false);
+    s.src='https://qt.gtimg.cn/q='+sym+'&_='+Date.now();
     document.head.appendChild(s);
   });
 }
+function monQuoteTx(code){ // 腾讯：字段 10/12/14/16/18=买1~5量(手)，20/22/24/26/28=卖1~5量(手)
+  return monTxLoad(mt(code)+code).then(a=>{
+    const tm=String(a[30]||'');
+    let ts=0;
+    if(/^\d{14}$/.test(tm)){
+      ts=new Date(+tm.slice(0,4),+tm.slice(4,6)-1,+tm.slice(6,8),+tm.slice(8,10),+tm.slice(10,12),+tm.slice(12,14)).getTime();
+    }
+    const pick=(idx)=>idx.map(i=>+a[i]||0);
+    const bids=pick([10,12,14,16,18]), asks=pick([20,22,24,26,28]);
+    const bidSum=bids.reduce((x,y)=>x+y,0), askSum=asks.reduce((x,y)=>x+y,0);
+    const weibi=(bidSum+askSum)>0?((bidSum-askSum)/(bidSum+askSum)*100):null; // 委比：正=买盘厚
+    return {name:String(a[1]||''),price:+a[3]||0,high:+a[33]||0,low:+a[34]||0,open:+a[5]||0,
+      vol:+a[6]||0,amount:0,prev:+a[4]||0,chg:+a[32]||0,t:ts,weibi,bidSum,askSum};
+  });
+}
+function monQuoteIdx(sym){ // 指数行情：上证 sh000001 / 深成 sz399001
+  return monTxLoad(sym).then(a=>({name:String(a[1]||''),price:+a[3]||0,open:+a[5]||0,prev:+a[4]||0,
+    high:+a[33]||0,low:+a[34]||0,chg:+a[32]||0}));
+}
 async function monQuote(code){
-  try{return await monQuoteEm(code);}catch(e){}
-  return await monQuoteTx(code);
+  try{return await monQuoteTx(code);}catch(e){}
+  return await monQuoteEm(code);
+}
+/* 大盘状态：上证/深成即时涨跌 + 日内位置 → 强势/偏强/震荡/偏弱/弱势 */
+async function monMktFetch(){
+  const [sh,sz]=await Promise.all([
+    monQuoteIdx('sh000001').catch(()=>null),
+    monQuoteIdx('sz399001').catch(()=>null)
+  ]);
+  return {sh,sz,at:Date.now()};
+}
+function monMktState(m){
+  if(!m||!m.sh||!(m.sh.price>0))return null;
+  const sh=m.sh;
+  const chg=(isFinite(sh.chg)&&sh.prev>0)?sh.chg:((sh.price/sh.prev-1)*100);
+  const intra=sh.open>0?((sh.price/sh.open-1)*100):0;
+  const pos=(sh.high>sh.low)?Math.round((sh.price-sh.low)/(sh.high-sh.low)*100):50;
+  const tone=(chg>=1&&intra>=0)?'强势':(chg>=0.3||intra>=0.3)?'偏强':(chg<=-1||intra<=-1)?'弱势':(chg<=-0.3||intra<=-0.3)?'偏弱':'震荡';
+  const szc=(m.sz&&m.sz.prev>0)?((m.sz.price/m.sz.prev-1)*100):null;
+  return {chg,intra,pos,tone,szc,shName:sh.name||'上证指数'};
 }
 /* 历史分位统计（严格剔除当日） */
 function monStat(kl){
@@ -489,38 +524,63 @@ function monZones(open,st){
   stop=Math.max(stop,buyLo*0.96); // 20日低过远时防止止损形同虚设（最宽-4%）
   return {buyLo,buyHi,sellLo,sellHi,stop:+stop.toFixed(2)};
 }
-/* 当日信号（优先级：止损 > 突破 > 卖区 > 买区 > 临近 > 等待） */
-function monSignal(price,st,z,vr,q,hasQ){
+/* 当日信号（优先级：止损 > 冲高回落 > 突破 > 卖区 > 买区 > 临近 > 等待）
+   结论词统一为「可买入 / 可卖出 / 持有 / 观望」，并参考大盘强弱(mkt)与委比(wb)：
+   - 大盘弱势或委比卖压(≤-15%) → 买区不提示买入，只观察；冲高回落则优先兑现
+   - 大盘强势或委比买盘(≥15%) → 买点更可信，卖点可多等一段 */
+function monSignal(price,st,z,vr,q,hasQ,mkt,wb){
   const d=new Date(),hm=d.getHours()*60+d.getMinutes(),w=d.getDay();
   const sess=(w>=1&&w<=5)&&((hm>=570&&hm<690)||(hm>=780&&hm<900));
   const qd=q&&q.t?monDs(new Date(q.t)):'';
   const live=sess&&(!qd||qd===monToday())&&price>0;
   const trend=st.ma5!=null&&st.ma10!=null&&st.ma5>st.ma10;
   const peak=hasQ&&q&&q.high>0?Math.max(q.high,price):0; // 当日最高（冲高回落卖点的跟踪基准）
-  let key='wait',label='等待',tone='',hint='';
-  if(!(price>0)){key='halt';label='无实时价 · 停牌/未成交';hint='未取到现价，区间仍按最近开盘价给出，仅供参照。';}
-  else if(!hasQ){key='nodata';label='实时行情暂不可用';hint='区间按最近收盘价估算；行情恢复后自动改用当日开盘价，触发时仍会提醒。';}
-  else if(!live){key='closed';label='非交易时段 · 现价 '+price.toFixed(2);
-    hint='区间已算好；开盘后自动按当日开盘价重算，触发时提醒。';}
-  else if(price<=z.stop){key='stop';tone='stop';label='跌破止损 · 离场';
-    hint='现价跌破 '+z.stop+'，按纪律止损，不补仓、不摊平。';}
-  else if(peak>=z.sellLo&&price<=peak*(1-st.sellR/100)){key='sellback';tone='sell';label='冲高回落 · 卖出';
-    hint='当日最高 '+peak.toFixed(2)+'，现价已回落 '+((1-price/peak)*100).toFixed(2)+'%（阈值 '+st.sellR+'%）；回测此位置卖出优于等到收盘。';}
-  else if(price>=st.high20){key='break';tone='break';label='突破20日高 · 跟踪';
-    hint='站上20日高 '+st.high20.toFixed(2)+'，强势但别追高，等回踩确认。';}
-  else if(price>=z.sellLo){key='sell';tone='sell';label=price>=z.sellHi?'止盈区上沿 · 坚决减仓':'止盈区 · 分批减仓';
-    hint='进入历史冲高区 '+z.sellLo+'~'+z.sellHi+'，按计划分批兑现。';}
-  else if(price>=z.buyLo&&price<=z.buyHi){
-    const ok=trend&&(vr==null||vr<1.6);
-    key=ok?'buy':'watch'; tone=ok?'buy':'';
-    label=ok?'低吸区 · 可分批':'回踩区 · 仅观察';
-    hint=ok?('落在历史回踩区，MA5>MA10 且量能温和；分批低吸，止损 '+z.stop+'。')
-      :('进入回踩区，但'+(trend?'量比 '+(vr!=null?vr.toFixed(1):'—')+' 偏大，防放量下跌':'MA5<MA10 仍偏弱，不接飞刀')+'；止损 '+z.stop+'。');
+  const mktWeak=!!(mkt&&(mkt.tone==='弱势'||mkt.tone==='偏弱'));
+  const mktStrong=!!(mkt&&(mkt.tone==='强势'||mkt.tone==='偏强'));
+  const wbSell=wb!=null&&wb<=-15, wbBuy=wb!=null&&wb>=15;
+  const mktTxt=mkt?('大盘'+mkt.tone+'('+(mkt.chg>0?'+':'')+mkt.chg.toFixed(2)+'%)'):'';
+  const wbTxt=wb!=null?('委比'+(wb>0?'+':'')+wb.toFixed(0)+'%'):'';
+  let key='wait',label='观望 · 未到买卖区',tone='',hint='';
+  if(!(price>0)){key='halt';label='观望 · 无实时价（停牌/未成交）';hint='未取到现价，区间仍按最近开盘价给出，仅供参照。';}
+  else if(!hasQ){key='nodata';label='观望 · 实时行情暂不可用';hint='区间按最近收盘价估算；行情恢复后自动改用当日开盘价，触发时仍会提醒。';}
+  else if(!live){
+    key='closed';
+    const inBuy=price>=z.buyLo&&price<=z.buyHi, inSell=price>=z.sellLo, belowStop=price<=z.stop;
+    label=belowStop?'可卖出 · 收盘已破止损':inSell?'可卖出 · 收盘在卖区':inBuy?'可买入 · 收盘在买区':'观望 · 收盘未到买卖区';
+    hint='按今日区间：买区 '+z.buyLo+'~'+z.buyHi+'、卖区 '+z.sellLo+'~'+z.sellHi+'。'
+      +(belowStop?'已破止损，明日开盘离场、不补仓。':inSell?'已到止盈区，明日高开冲高即可兑现。':inBuy?'明日回踩买区不破为低吸机会（'+mktTxt+(wbTxt?'、'+wbTxt:'')+'）。':'距买区 '+((price>z.buyHi)?((price/z.buyHi-1)*100).toFixed(2)+'%':'—')+'、距卖区 +'+((z.sellLo/price-1)*100).toFixed(2)+'%。');
   }
-  else if(price>z.buyHi&&price<=z.buyHi*1.008){key='near';label='临近买区 · 准备';
-    hint='距买区上沿 '+z.buyHi+' 约 '+((price/z.buyHi-1)*100).toFixed(2)+'%，挂单等回踩。';}
-  else {key='wait';label='等待';hint='现价不在买卖区：买区 '+z.buyLo+'~'+z.buyHi+'，卖区 '+z.sellLo+'~'+z.sellHi+'。';}
-  return {key,label,tone,hint,trend,live};
+  else if(price<=z.stop){key='stop';tone='stop';label='可卖出 · 跌破止损离场';
+    hint='现价跌破 '+z.stop+'，按纪律止损，不补仓、不摊平'+(mktWeak?'（'+mktTxt+'，弱市别扛）':'')+'。';}
+  else if(peak>=z.sellLo&&price<=peak*(1-st.sellR/100)){key='sellback';tone='sell';
+    label='可卖出 · 冲高回落'+((mktWeak||wbSell)?'（大盘弱/卖压）':'');
+    hint='当日最高 '+peak.toFixed(2)+'，现价已回落 '+((1-price/peak)*100).toFixed(2)+'%（阈值 '+st.sellR+'%）；'
+      +((mktWeak||wbSell)?(mktTxt+'、'+wbTxt+' 均偏空，优先兑现，不等反弹'):'回测此位置卖出优于等到收盘。');}
+  else if(price>=st.high20){key='break';tone='break';label='持有 · 突破20日高跟踪';
+    hint='站上20日高 '+st.high20.toFixed(2)+'，强势但别追高，等回踩确认'+(mktStrong?'（'+mktTxt+'，可继续持有）':'')+'。';}
+  else if(price>=z.sellLo){key='sell';tone='sell';
+    label=(price>=z.sellHi?'可卖出 · 止盈上沿坚决减仓':'可卖出 · 止盈区分批')+(wbSell?'（卖压）':'');
+    hint='进入历史冲高区 '+z.sellLo+'~'+z.sellHi+'，按计划分批兑现'
+      +(mktWeak?'；'+mktTxt+'，别等更高':(wbBuy?'；'+wbTxt+' 买盘仍厚，可留一档看冲高':'；'+wbTxt))+'。';}
+  else if(price>=z.buyLo&&price<=z.buyHi){
+    const ok=trend&&(vr==null||vr<1.6)&&!mktWeak&&!wbSell;
+    const why=[];
+    if(!trend)why.push('MA5<MA10 偏弱');
+    if(vr!=null&&vr>=1.6)why.push('量比 '+vr.toFixed(1)+' 偏大');
+    if(mktWeak)why.push(mktTxt);
+    if(wbSell)why.push(wbTxt+' 卖压');
+    key=ok?'buy':'watch'; tone=ok?'buy':'';
+    label=ok?'可买入 · 低吸区分批':'观望 · 回踩区不接飞刀';
+    hint=ok?('落在历史回踩区，'+(mktStrong?mktTxt+'、':'')+(wbBuy?wbTxt+'、':'')+'MA5>MA10 且量能温和；分批低吸，止损 '+z.stop+'。')
+      :('进入回踩区，但'+why.join('、')+'，不接飞刀；止损 '+z.stop+'。');
+  }
+  else if(price>z.buyHi&&price<=z.buyHi*1.008){key='near';label='观望 · 临近买区等回踩';
+    hint='距买区上沿 '+z.buyHi+' 约 '+((price/z.buyHi-1)*100).toFixed(2)+'%，挂单等回踩'+(mktWeak?'（'+mktTxt+'，弱市不急于接':'')+'）。';}
+  else {key='wait';label='观望 · 未到买卖区';
+    hint='买区 '+z.buyLo+'~'+z.buyHi+'、卖区 '+z.sellLo+'~'+z.sellHi+'；距买区 '
+      +((price>z.buyHi)?((price/z.buyHi-1)*100).toFixed(2)+'%、距卖区 +'+((z.sellLo/price-1)*100).toFixed(2)+'%':'—')+'。';}
+  const act=(key==='buy')?'买入':(key==='sell'||key==='sellback'||key==='stop')?'卖出':(key==='break')?'持有':(key==='closed'&&label.indexOf('可买入')>=0)?'买入':(key==='closed'&&label.indexOf('可卖出')>=0)?'卖出':'观望';
+  return {key,label,tone,hint,trend,live,act};
 }
 
 let __monCtx=null;
@@ -567,7 +627,10 @@ function monRender(){
   const open=preOpen?lastClose:openReal;
   const z=monZones(open,st);
   const vr=monVR(MON.kl);
-  const sig=monSignal(price,st,z,vr,q,hasQ);
+  const mkt=monMktState(MON.mkt);
+  const wb=(q&&q.weibi!=null)?q.weibi:null;
+  const sig=monSignal(price,st,z,vr,q,hasQ,mkt,wb);
+  const actCls=sig.act==='买入'?'a-buy':sig.act==='卖出'?'a-sell':sig.act==='持有'?'a-hold':'';
   const chg=q?q.chg:((price/lastClose-1)*100);
   const up=chg>=0;
   const priceC=up?'var(--red)':'var(--green)';
@@ -577,8 +640,9 @@ function monRender(){
   const buyRate=st.zBuy?Math.round(st.zBuyWin/st.zBuy*100)+'%':'—';
   const sellRate=st.zTrail?Math.round(st.zTrailWin/st.zTrail*100)+'%':'—';
   body.innerHTML=`
-  <div class="mon-banner ${sig.tone}">
-    <div>
+  <div class="mon-banner ${sig.tone} ${actCls}">
+    <div class="act">${sig.act}</div>
+    <div style="min-width:0">
       <div class="sig">${sig.label}</div>
       <div class="hint">${sig.hint}</div>
     </div>
@@ -589,6 +653,8 @@ function monRender(){
     </div>
   </div>
   <div class="mon-grid">
+    <div class="mbox"><div class="k">大盘环境</div><div class="v" style="color:${mkt?((mkt.tone==='弱势'||mkt.tone==='偏弱')?'var(--green)':(mkt.tone==='震荡'?'var(--text)':'var(--red)')):'var(--muted)'}">${mkt?mkt.tone:'—'}</div><div class="s">${mkt?'上证 '+(mkt.chg>0?'+':'')+mkt.chg.toFixed(2)+'% · 日内 '+mkt.intra.toFixed(2)+'%'+(mkt.szc!=null?'<br>深成 '+(mkt.szc>0?'+':'')+mkt.szc.toFixed(2)+'%':''):'上证/深成未取到'}</div></div>
+    <div class="mbox"><div class="k">委比（五档买卖）</div><div class="v" style="color:${wb==null?'var(--muted)':wb>=15?'var(--red)':wb<=-15?'var(--green)':'var(--text)'}">${wb!=null?(wb>0?'+':'')+wb.toFixed(1)+'%':'—'}</div><div class="s">${wb==null?'需腾讯行情':'正=买盘厚 · 负=卖压'+(wb>=15?' · 买盘占优':wb<=-15?' · 卖压偏重':'')}</div></div>
     <div class="mbox"><div class="k">${preOpen?'基准（昨收）':'开盘价（区间基准）'}</div><div class="v">${open.toFixed(2)}</div><div class="s">${preOpen?'开盘后按开盘价重算':'买/卖区基准'}</div></div>
     <div class="mbox"><div class="k">买入区</div><div class="v" style="color:var(--green)">${z.buyLo}~${z.buyHi}</div><div class="s">较开盘 ${st.p.lo10.toFixed(1)}%~${st.p.lo25.toFixed(1)}%</div></div>
     <div class="mbox"><div class="k">卖出区（冲高观察）</div><div class="v" style="color:var(--red)">${z.sellLo}~${z.sellHi}</div><div class="s">较开盘 +${st.p.hi75.toFixed(1)}%~+${st.p.hi90.toFixed(1)}% · 回落 ${st.sellR}% 即卖</div></div>
@@ -601,7 +667,8 @@ function monRender(){
   <div class="mon-foot">
     样本 ${st.from} ~ ${st.to} · ${st.n} 个交易日（已剔除当日）· 当日低点中位 ${st.p.lo50.toFixed(2)}%、高点中位 +${st.p.hi50.toFixed(2)}% ·
     更新 ${new Date().toLocaleTimeString()}（每60秒）<br>
-    规则：买区需 MA5&gt;MA10 且量比&lt;1.6 才提示低吸，否则只观察；跌破止损离场；卖出不用「碰到卖区就卖」——需当日最高已进入卖区，再从当日最高回落 ${st.sellR}%（≈0.15×ATR，夹在 0.35%~1.0%）才提示卖出；突破20日高只跟踪。历史验证为样本内实测：30只主板股×近50个交易日回测，回落卖出均值优于持到收盘 +0.31%、55% 的交易日更优，样本少时波动大，仅供研究参考，不构成投资建议。
+    结论：顶部大字即「现在该买还是该卖」——买入=回踩买区且趋势/量能/大盘/委比都过关；卖出=破止损或冲高回落；持有=已突破20日高；观望=未到区间或条件不足。<br>
+    规则：买区需 MA5&gt;MA10、量比&lt;1.6，且大盘非弱势、委比&gt;-15% 才提示买入，否则只观察；跌破止损离场；卖出不用「碰到卖区就卖」——需当日最高已进入卖区，再从当日最高回落 ${st.sellR}%（≈0.15×ATR，夹在 0.35%~1.0%）才提示卖出；突破20日高只跟踪。历史验证为样本内实测：30只主板股×近50个交易日回测，回落卖出均值优于持到收盘 +0.31%、55% 的交易日更优，样本少时波动大，仅供研究参考，不构成投资建议。
   </div>`;
 
   const act=['buy','sell','sellback','stop','break'].includes(sig.key);
@@ -613,6 +680,13 @@ function monRender(){
     }catch(e){}
   }
   MON.lastKey=sig.key;
+  monCacheSave();
+}
+function monCacheSave(){ // 缓存上次结论：下次点开页面先用缓存秒显，再后台刷新
+  try{
+    localStorage.setItem(MON_LS+'_view',JSON.stringify({code:MON.code,at:Date.now(),
+      html:$('#monBody').innerHTML,tag:$('#monTag').textContent,tagCls:$('#monTag').className}));
+  }catch(e){}
 }
 
 async function monFetchK(){
@@ -620,21 +694,25 @@ async function monFetchK(){
   MON.kl=r.kl; MON.klSrc=r.src; MON.klAt=Date.now(); MON.stat=monStat(r.kl);
   return MON.stat;
 }
-async function startMon(input){
+async function startMon(input,quiet){
   const kw=(input!=null?String(input):($('#monCode').value||'')).trim();
   if(!kw){alert('请输入股票代码或名称，如 600519 / 贵州茅台');return;}
   const r=await monResolve(kw);
   if(!r||!r.code){$('#monBody').innerHTML='<div class="empty">未找到该股票，请换 6 位代码或更完整的名称试试。</div>';return;}
   if(MON.timer){clearInterval(MON.timer);MON.timer=null;}
-  MON.code=r.code; MON.name=r.name||r.code; MON.lastKey=''; MON.q=null;
+  MON.code=r.code; MON.name=r.name||r.code; MON.lastKey=''; MON.q=null; MON.mkt=null;
   $('#monCode').value=r.code+(MON.name!==r.code?' '+MON.name:'');
   $('#monBtn').textContent='监测中 · 停止';
   $('#monTag').textContent='加载中…'; $('#monTag').className='mon-tag';
-  $('#monBody').innerHTML='<div class="empty">正在拉取近50个交易日与实时行情…</div>';
+  if(!quiet)$('#monBody').innerHTML='<div class="empty">正在拉取近50个交易日与实时行情…</div>';
   try{
     const st=await monFetchK();
     if(!st)throw new Error('历史样本不足（需≥20个交易日）');
-    try{MON.q=await monQuote(MON.code);}catch(e){MON.q=null;}
+    const [qq,mm]=await Promise.all([
+      monQuote(MON.code).catch(()=>null),
+      monMktFetch().catch(()=>null)
+    ]);
+    MON.q=qq; MON.mkt=mm;
     if(MON.q&&MON.q.name)MON.name=MON.q.name;
     $('#monCode').value=MON.code+' '+MON.name;
     try{localStorage.setItem(MON_LS,JSON.stringify({code:MON.code,name:MON.name}));}catch(e){}
@@ -649,7 +727,11 @@ async function monTick(){
   if(!MON.code)return;
   try{
     if(Date.now()-MON.klAt>600000){try{await monFetchK();}catch(e){}} // 每10分钟刷新日K（样本滚动/当日K线更新）
-    try{MON.q=await monQuote(MON.code);}catch(e){}
+    const [qq,mm]=await Promise.all([
+      monQuote(MON.code).catch(()=>MON.q||null),
+      monMktFetch().catch(()=>MON.mkt||null)
+    ]);
+    MON.q=qq; MON.mkt=mm;
     monRender();
   }catch(e){}
 }
@@ -666,7 +748,28 @@ function monWatch(code){ // 从快照存档等位置一键转入监测
 }
 function monResume(){
   let o=null; try{o=JSON.parse(localStorage.getItem(MON_LS)||'null');}catch(e){}
-  if(o&&o.code){$('#monCode').value=o.code+(o.name?' '+o.name:''); startMon(o.code).catch(()=>{});}
+  if(o&&o.code){
+    $('#monCode').value=o.code+(o.name?' '+o.name:'');
+    try{ // 先用上次结论秒显，再后台刷新，避免点开是一片空白
+      const v=JSON.parse(localStorage.getItem(MON_LS+'_view')||'null');
+      if(v&&v.code===o.code&&v.html){
+        $('#monBody').innerHTML=v.html;
+        $('#monTag').textContent='上次 '+new Date(v.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+' · 刷新中…';
+        $('#monTag').className='mon-tag';
+      }
+    }catch(e){}
+    startMon(o.code,true).catch(()=>{});
+    return;
+  }
+  // 没有历史选择：自动盯最近一次快照的首推，打开页面即可看到买/卖结论
+  try{
+    const sp=loadSnaps()[0]||null;
+    const cand=sp&&((sp.trend&&sp.trend[0])||(sp.auction&&sp.auction[0])||(sp.intra&&sp.intra[0]));
+    if(cand&&cand.c){
+      $('#monCode').value=cand.c+' '+(cand.n||'');
+      startMon(cand.c,true).catch(()=>{});
+    }
+  }catch(e){}
 }
 $('#monBtn')?.addEventListener('click',()=>{ MON.code?stopMon():startMon(); });
 $('#monCode')?.addEventListener('keydown',e=>{if(e.key==='Enter')startMon();});
