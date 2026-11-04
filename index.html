@@ -174,6 +174,7 @@
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
+      <div class="note">口径：9:26竞价高开 0.5%~6%，甜点区 2%~5%（回测：该区冲高≥3% 45%~60%，高开≥6%仅23%且开→收-1.34%，已剔除）；按「当日冲高潜力」排序，每日前2只冲高≥3% 67%、开→收 +0.96%。</div>
     </div>
     <div class="group" id="gIntra">
       <div class="ghead"><span class="t-orange">T+1选股大涨 · 平开低吸</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
@@ -1145,6 +1146,8 @@ function pickCard(p, rank, isLimit, km){
   if(/ST/.test(p.name))risks.push({t:'ST风险警示',c:'danger'});
   if(km&&km.broke10)risks.push({t:'已破10日线·按纪律离场',c:'warn'});
   if(zt&&(+p.hs||0)<1.5&&lbc>=3)risks.push({t:'一字/缩量封板·谨防断板接盘',c:'warn'});
+  // 昨日涨停+高开≥3%：回测冲高≥3% 66%/开→收 +0.3%（最优格之一），但炸板率升至16%~18% → 冲高即走
+  if(!zt&&km&&km.yestChg>=limit*0.97&&og!=null&&og>=3)risks.push({t:'昨停高开·炸板率约16%·冲高即走',c:'warn'});
   const name=p.name.replace('N','N·').replace('C','C·');
   // 依据文本
   const parts=[];
@@ -1318,7 +1321,7 @@ async function run(){
 
     // 6) 渲染
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
-    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无当日强势大涨票')+'</div>';
+    $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无符合条件的票（需竞价高开0.5%~6%、未涨停、5日动量向上、均线多头）')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开4~9.5%、竞价换手率≥0.5%、流通市值≤100亿，按竞价换手率降序推1只）')+'</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
