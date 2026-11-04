@@ -869,71 +869,75 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 当天�
     if(km.chg5<0)return false;   // 5日动量向下（跌深/崩票）→ 剔，避免买在反弹高点后回落
     return km.ma5>km.ma10;       // 空头排列 → 剔；否则保留
   });
+  // ★竞价高开上限硬剔除（回测：高开≥6% 当日开→高仅+2.08%、冲高≥3% 23%、≥5% 0%、开→收 -1.34%，
+  //   是"高开回填"最重的一档；该区间已由上方「竞价·强势」模块负责，当日大涨模块不再重复选高开过头的票）
+  cands=cands.filter(s=>{
+    const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
+    return og<6;
+  });
   const arr=cands;
   flows=flows||{};
-  const sg=+st||0.5;
-  // 市场情绪（回测12）：情绪过热(昨日/当日涨停家数多、连板高)时，"非涨停低吸"风格易被抱团资金抽血、高开回落
-  // → gapAmp 全区间持续生效：sg∈[0.2,1]→gapAmp∈[0.86,1.30]。情绪越热，对高开的惩罚与低高开偏好越强（0.6不再为惰性门限）
-  const gapAmp=0.75+(sg*0.55);
   const score=(s)=>{
     const km=klines[s.code];
-    const vr=km?km.vr:1;
     const hs=+s.turnoverratio||0;
     const amount=+s.amount||0;
-    const nmc=+s.nmc||0; // 万元
+    const nmc=+s.nmc||0;           // 万元
+    const fmc=nmc/1e4;             // 亿元（流通市值）
     const flow=flows[s.code]||0;
-    const chg=+s.changepercent||0; // 当日实时涨幅（盘中可知，非9:26前视；回测口径弱化）
+    const chg=+s.changepercent||0; // 当日实时涨幅（盘中可知，非9:26前视）
     const lim=detectLimitPct(s.name);
     const openGap=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0; // 竞价高开%（9:25撮合，无前视）
-    const tw=wt('trend'); // 对账闭环可调权重（默认1=原策略）
+    const tw=wt('trend'); // 对账闭环可调权重（默认1=本次校准值）
     let sc=0;
-    // 竞价高开（9:25无前视）：回测11显示高开越低越有当日强势拉升空间，高开越高越易当日回填 → 负权；热市惩罚放大
-    sc+=(openGap<1?10:(openGap<2)?4:(openGap<4)?-2:(openGap<6)?-10:-14)*gapAmp*tw.og;
-    // 昨日涨停 → 今日易高开回落，降分（无前视）
-    if(km&&km.yestChg>=lim*0.97)sc-=8;
-    // 均线：空头(ma5≤ma10)高波动反弹当日涨幅胜过多头，弱化多头（无前视）
-    if(km&&(km.ma5>km.ma10))sc-=2;else sc+=3;
-    // 5日动量(昨收无前视)非可靠正信号：仅对极端陡峭追高风险轻罚
-    if(km&&km.chg5>70)sc-=10;
-    // 已移除"实时涨幅追高项"：9:26竞价时chg≈0本无贡献，唯一作用是盘中自动刷新重跑时把已涨高的票(如哈药+7%)顶上来→追高工具。
-    //   当日大涨=9:26竞价快照选股，不应因"盘中已涨"再加分——当日涨幅是"结果"非"原因"，违反无前视纪律；实时项仅保留往下惩罚(chg<0)与量能/资金。
-    // 放量/人气/资金（实时）
-    if(km&&km.intraday){
-      // ★早盘量能（回测14：9:45/9:50/10:00 三时点结论一致）：
-      //   早盘 vr=今日累计量/前5日均量，天然只有0.2上下；"温和量/缩量"隔日正收益(vr<0.3 组次日+0.11~+0.22%)，
-      //   "早盘放量"隔日全负(vr≥0.5 组次日-0.38~-0.43%) → 区间打分替代原log递增，早盘爆量不给分
-      const vrTier=(vr>=0.1&&vr<0.3)?10:(vr<0.1)?6:0;
-      sc+=vrTier*tw.vr;
-    }else{
-      sc+=Math.min(Math.log10(vr+1)/1.1,1)*10*tw.vr;   // 量比（竞价/午后=昨日或近全天量比，保留原逻辑）
-      if(vr<0.8)sc-=6;                                 // 量能不足
+    // ★竞价高开改为「甜点加分」（2026-11 回测：473只主板×117日、11559个高开候选样本，前/后半程同向）：
+    //   高开2~5% 是当日大涨最优区（冲高≥3% 45%~60%、开→收 -0.14%~+0.17%）；
+    //   高开≥6% 冲高≥3%仅23%、≥5%为0、开→收 -1.34% → 在硬过滤里直接剔除，此处不再给分。
+    //   原「高开越低越好」的负权被推翻：那会把选股挤到0.5~1%平开票（池内冲高≥3%仅30%，等于随机）。
+    sc+=(openGap>=2&&openGap<5?12:openGap>=1&&openGap<2?6:openGap<1?2:0)*tw.og;
+    // 昨日强度（昨收可得，无前视）：昨日涨停/大涨的票今日冲高概率更高
+    //   （回测：昨日涨停组 开→高+4.05%、冲高≥3% 59%；昨日非涨停 2.35%/28%）
+    if(km){
+      if(km.yestChg>=lim*0.97)sc+=4;
+      else if(km.yestChg>=5)sc+=3;
+      else if(km.yestChg<-5)sc-=4;
     }
-    sc+=Math.min(hs/20,1)*8*tw.turnover;                 // 换手人气
-    sc+=Math.log10(amount+1)/12.5*6*tw.amount;           // 成交额（降权）
-    sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*4*tw.nmc;   // 小市值（弱化）
-    if(flow>0)sc+=Math.min(flow/5e8,1)*8*tw.flow;        // 主力净流入
-    if(chg<0)sc-=15;                               // 走弱
-    // ★量能分档（2026-11 回测：3152只主板 × 近50个交易日，24100样本）：
-    //   昨量比 1.2~3 = 资金进场但未到兑现，当日开→收 -0.16%~+0.11%、日内冲高≥3% 占26%~36%，是相对最优区间 → 温和加分；
-    //   昨量比 ≥3（爆量）多为一日游：当日开→收 -0.19%、次日 -0.90%；「爆量+高开≥1%」当日 -1.09%、胜率仅33%
-    //   → 取消原「爆发巨量 +10」加分（该因子会把爆量高开票顶到前排，实测拖累当日与次日），改为降权 + 仅作风险标注。
-    //   盘中早盘 vr 是今日累计量（口径不同，回测14 已证明早盘放量隔日为负），故分档只在竞价/收盘口径生效。
+    // 昨日量能：1.2以上（资金进场）加4、缩量(<0.8)减4；
+    //   爆量(≥3)在本候选池内 开→高+4.39%/冲高≥3% 62%（n=53，样本少），另有大样本显示爆量次日偏弱 → 只给+2并保留风险标注
     const burstVol=!!(km&&!km.intraday&&km.vr!=null&&km.vr>=3);
     const volMild=!!(km&&!km.intraday&&km.vr!=null&&km.vr>=1.2&&km.vr<3);
-    if(burstVol)sc-=6*tw.vr; else if(volMild)sc+=5*tw.vr;
+    if(!(km&&km.intraday)&&km&&km.vr!=null){
+      if(burstVol)sc+=2*tw.vr; else if(volMild)sc+=4*tw.vr; else if(km.vr<0.8)sc-=4*tw.vr;
+    }
     s._iburst=burstVol; s._imod=volMild;
+    // 5日动量（截至昨收，无前视）：强势延续 开→高+4.00%、冲高≥3% 61%；下跌组仅2.36%/28%
+    if(km&&km.chg5!=null)sc+=(km.chg5>15?6:km.chg5>=0?2:-5);
+    // 均线：多头 开→高2.70% vs 空头2.35% → 修正为多头加分（原为扣分，方向错）
+    if(km&&km.ma5!=null&&km.ma10!=null)sc+=(km.ma5>km.ma10?4:-2);
+    // 流通市值：40~80亿最优（开→高3.69%、冲高49%、次日+0.46%）；>150亿最差（2.18%/26%）→ 分档+上限重罚
+    sc+=(fmc<=40?5:fmc<=80?6:fmc<=110?3:fmc<=150?0:-8)*tw.nmc;
+    // 换手人气：相对20日均量 1.5~4倍组 冲高≥3% 68%（量能确认是核心），绝对换手 4%~20% 加4
+    sc+=(hs>=4&&hs<20?4:hs>=20?1:hs<1.5?-2:0)*tw.turnover;
+    sc+=Math.log10(amount+1)/12.5*3*tw.amount;         // 成交额（弱化，防大票霸榜）
+    if(flow>0)sc+=Math.min(flow/5e8,1)*6*tw.flow;      // 主力净流入
+    if(chg<0)sc-=15;                                   // 走弱
+    // 盘中早盘刷新时的量能口径（今日累计量/前5日均量≈0.2）：沿用回测14结论，早盘爆量不给分
+    if(km&&km.intraday){
+      const vrTier=(km.vr>=0.1&&km.vr<0.3)?8:(km.vr<0.1)?5:0;
+      sc+=vrTier*tw.vr;
+    }
     return sc;
   };
   const scaled=arr.map(s=>({s,sc:score(s)}));
   scaled.sort((a,b)=>b.sc-a.sc);
   return scaled.slice(0,n).map(x=>x.s).filter(Boolean);
 }
-function prelimTrendScore(s){ // 初选排序：换手+成交额+小市值+竞价高开（不依赖K线，无前视）
-  const openGap=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
-  return Math.min((+s.turnoverratio||0)/15,1)*40
-        +Math.log10((+s.amount||0)+1)/12.5*30
-        +Math.max(0,1-Math.log10((+s.nmc||0)*1e4)/10)*20
-        +(openGap<1?8:(openGap<2)?2:-6); // 低高开有拉升空间，不高开加分（与终分一致）
+function prelimTrendScore(s){ // 初选排序：高开甜点+换手+成交额+市值分档（不依赖K线，无前视）
+  const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
+  const fmc=(+s.nmc||0)/1e4; // 亿元
+  return (og>=2&&og<5?40:og>=1&&og<2?22:og<1?8:0)  // 高开甜点优先（≥6% 由终选硬剔除）
+        +Math.min((+s.turnoverratio||0)/15,1)*20
+        +Math.log10((+s.amount||0)+1)/12.5*24
+        +(fmc<=40?14:fmc<=80?18:fmc<=110?10:fmc<=150?4:-8); // 40~80亿最优，>150亿扣分
 }
 
 /* ================== T+1选股大涨 · 平开低吸（剔除昨日涨停）==================
@@ -1154,7 +1158,7 @@ function pickCard(p, rank, isLimit, km){
   }else{
     const vr=km?km.vr:NaN;
     parts.push(`<b>模式要点·当天大涨：</b>今日开盘${og!=null?(og>0?'+':'')+og.toFixed(2)+'%、':''}现涨${pct}% 强势拉升、未涨停，有望当日继续冲高；`);
-    if(km&&isFinite(vr))parts.push(`量比${fmtW(vr)}、${p._iburst?'昨日爆量（≥近5日均量3倍）——近50日回测多为一日游：当日冲高回落、次日平均 -0.9%，已降权，不建议追':(vr>=2?'明显放量但未失控，资金进场（课程31/32 跟随资金）':(vr>=1.2?'温和放量，资金进场':'量能一般'))}；`);
+    if(km&&isFinite(vr))parts.push(`量比${fmtW(vr)}、${p._iburst?'昨日爆量（≥近5日均量3倍）——资金强攻，当日冲高概率更高，但爆量易分歧、冲高要敢卖':(vr>=2?'明显放量但未失控，资金进场（课程31/32 跟随资金）':(vr>=1.2?'温和放量，资金进场（当日冲高最优区间）':'量能偏弱，冲高动能不足'))}；`);
     parts.push(`换手${fmtW(+p.turnoverratio)}%、成交${fmtW_b(p.amount)}亿，人气与资金为${(+p.turnoverratio||0)>6?'活跃':'中上'}；`);
     if(p.flow){parts.push(`今日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'主力加仓，跟随资金（课程31/32）':'主力净流出，谨慎接力'}；`);}
     if(km){parts.push(`5日涨幅${fmtW(km.chg5)}%，均线${km.broke10?'已破10日〈风险〉':'位于MA5/MA10上方〈多头〉'}（主板破10日线止损·指南）；`);}
@@ -1170,7 +1174,7 @@ function pickCard(p, rank, isLimit, km){
       ${zt?`<div class="br"><div class="k">封单(亿)</div><div class="v">${fmtW_b(p.fund)}</div></div>`:''}
       <div class="br"><div class="k">换手率</div><div class="v">${fmtW(+p.turnoverratio)}%</div></div>
       ${km?`<div class="br"><div class="k">量比</div><div class="v">${fmtW(km.vr)}</div></div>`:''}
-      ${p._iburst?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--orange)">爆量·防一日游</div></div>`:p._imod?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--red)">温和放量</div></div>`:''}
+      ${p._iburst?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--orange)">爆量·防分歧</div></div>`:p._imod?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--red)">放量·资金进场</div></div>`:''}
       <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
       <div class="br"><div class="k">流通市值</div><div class="v">${fmtW_b(p.ltsz||p.nmc*1e4)}亿</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
@@ -1219,7 +1223,7 @@ async function run(){
     const limitCands=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95).slice(0,24).map(s=>s.code);
     const trendShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
-      return og>=0.5&&s.changepercent<l*0.95;}) // 竞价高开≥0.5%且未涨停（无前视）
+      return og>=0.5&&og<6&&s.changepercent<l*0.95;}) // 竞价高开0.5%~6%且未涨停（无前视；≥6%属高开回填区）
       .map(s=>({s,sc:prelimTrendScore(s)}))
       .sort((a,b)=>b.sc-a.sc).slice(0,40).map(x=>x.s);
     const trendCands=trendShort.map(s=>s.code);
@@ -1276,8 +1280,11 @@ async function run(){
       _stTag.style.display='';
       _stTag.textContent='市场情绪 '+(sentiment>0.72?'过热·谨慎追高':sentiment>=0.55?'偏热':sentiment>=0.4?'正常':'偏弱')+(_gateMsg?' · '+_gateMsg:'');
     }
-    const trendPicks=buildTrendPicks(trendShort, klines, flows, nTrendE, sentiment);
+    // ★先去重再选：当日大涨(高开甜点2~5%)与竞价·强势(高开≥4%)口径有交集，
+    //   竞价模块已选的票从当日大涨候选里剔除，避免同一只票在两个卡片重复出现（名额顺延给下一名）
     const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE, ztMap);
+    const _aucCodes=new Set(auctionPicks.map(p=>p.code));
+    const trendPicks=buildTrendPicks(trendShort.filter(s=>!_aucCodes.has(s.code)), klines, flows, nTrendE, sentiment);
     let intraPicks=buildIntraPicks(intraShort, klines, flows, nIntraE);
     // ★盘中冻结：buildIntraPicks是实时版块，auto-refresh每次都会换成"当前涨最高"的票=逐日内顶。
     //   选中后N分钟(COOL)内不换新票——仅当老票破位/涨停/炸板(离开intraShort候选池)才补新票，并标记"新选/延续/换新"。
