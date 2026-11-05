@@ -118,7 +118,7 @@
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
   <button class="hbtn" id="btnHelp">策略依据</button>
-  <button class="hbtn" id="btnSnap">选股记录</button>
+  <button class="hbtn" id="btnSnap">对账闭环</button>
 </header>
 
 <!-- 个股监测 · 首页 -->
@@ -136,6 +136,17 @@
       <button class="hbtn run" id="monBtn">开始监测</button>
     </div>
     <div id="monBody"><div class="empty">输入一只股票：系统用该股过去50个交易日「开盘→当日最高/最低」的分布，算出今日买入区、卖出区与止损位，盘中每60秒对照现价，触发时高亮并提醒。</div></div>
+  </div>
+
+  <div class="card" id="pickLogCard" style="margin-top:16px">
+    <div class="mon-top">
+      <h3>选股记录 · 手动留痕</h3>
+      <span class="mon-tag" id="pickLogTag">0 条</span>
+      <div style="flex:1"></div>
+      <button class="hbtn run" id="btnPickLog">记录选股</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">点「记录选股」把当前三个板块的选股结果存一条，含「开盘涨幅」与「选股时涨幅」，触发方式记为手动执行；最多保留最近 60 条，存于本机。</div>
+    <div id="pickLogList" style="max-height:320px;overflow:auto"></div>
   </div>
 </div>
 
@@ -187,13 +198,8 @@
   </div>
 </div>
 
-<!-- 选股记录（手动留痕） -->
+<!-- 对账闭环（原 9:26 自动存档） -->
 <div id="snapApp" style="display:none;padding:16px 20px 28px;max-width:1280px;margin:0 auto">
-  <div class="card" style="margin-bottom:12px">
-    <h3>选股记录 · 手动留痕</h3>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">选好股后点下面的「记录选股」，把当前三个板块的选股结果存一条（含「开盘涨幅」与「选股时涨幅」），触发方式统一记为<b>手动执行</b>，最多保留最近 60 条，存于本机 localStorage。下方「对账闭环」仍只取交易日 9:25 前后的自动存档做收益回测，互不影响。</div>
-    <button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:7px 16px" onclick="manualSnap()">记录选股</button>
-  </div>
   <div class="card"><div id="snapList"><div class="empty">加载中…</div></div></div>
 </div>
 
@@ -1425,8 +1431,9 @@ function savePickLog(a){try{localStorage.setItem(PLOGKEY,JSON.stringify(a))}catc
 function addPickLog(auction,trend,intra,src){
   const d=new Date();
   const rec={ts:d.getTime(),date:todayKey(),t:pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()),
-    src:src||'刷新',auction:auction||[],trend:trend||[],intra:intra||[]};
+    src:src||'手动执行',auction:auction||[],trend:trend||[],intra:intra||[]};
   const arr=loadPickLog(); arr.unshift(rec); if(arr.length>60)arr.length=60; savePickLog(arr);
+  renderPickLog();
   if(snapView)renderSnaps();
 }
 function getGroupPicks(sel){
@@ -1571,8 +1578,10 @@ function autoTune(){ // ★真·自动调参（无人值守）：对账出样本
   return k; // 返回本次实际调整的板块组数（0=样本不足未动）
 }
 function fmtWtRow(label,cells){return '<tr style="font-size:11.5px"><td style="padding:2px 6px;color:var(--muted)">'+label+'</td>'+cells.map(c=>'<td style="text-align:center;padding:2px 6px">'+c+'</td>').join('')+'</tr>';}
-function renderPickLogBlock(){
+function renderPickLog(){
+  const el=$('#pickLogList'); if(!el)return;
   const logs=loadPickLog();
+  const tag=$('#pickLogTag'); if(tag)tag.textContent=logs.length+' 条';
   const num=(v)=>(v>0?'+':'')+v.toFixed(2)+'%';
   const chip=(x)=>{
     const og=(x.f&&isFinite(x.f.og))?x.f.og:null;
@@ -1588,15 +1597,11 @@ function renderPickLogBlock(){
     const lis=(items&&items.length)?items.map(chip).join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>';
     return '<div style="margin:3px 0"><div style="font-size:11px;color:var(--muted)">'+title+'（'+n+'）</div>'+lis+'</div>';
   };
-  const body=logs.length?logs.slice(0,20).map(rec=>{const ds=String(rec.date).replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');return '<div style="border-top:1px solid #f0f1f4;padding:7px 0">'
+  if(!logs.length){el.innerHTML='<div class="empty">暂无记录。点右上角「记录选股」，把当前选股结果存为一条。</div>';return;}
+  el.innerHTML=logs.slice(0,20).map(rec=>{const ds=String(rec.date).replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');return '<div style="border-top:1px solid #f0f1f4;padding:7px 0">'
       +'<div style="display:flex;justify-content:space-between;font-size:11.5px"><b>'+ds+' '+rec.t+'</b>'
       +'<span style="color:var(--muted)">'+rec.src+'</span></div>'
-      +grp('竞价强势',rec.auction)+grp('当日大涨',rec.trend)+grp('T+1选股',rec.intra)+'</div>';}).join('')
-    :'<div class="empty">暂无记录。点上方「记录选股」即可把当前选股结果存为一条。</div>';
-  return '<div class="card" style="margin-bottom:10px">'
-    +'<h3>记录明细（最近 20 条）</h3>'
-    +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">共 '+logs.length+' 条（最多保留60条）；「开」=开盘涨幅，「选」=选股时的涨幅；点股票名可直接跳到个股监测。</div>'
-    +body+'</div>';
+      +grp('竞价强势',rec.auction)+grp('当日大涨',rec.trend)+grp('T+1选股',rec.intra)+'</div>';}).join('');
 }
 
 function renderSnaps(){
@@ -1633,11 +1638,11 @@ function renderSnaps(){
     +'<button class="hbtn" style="border:1px solid var(--line);padding:6px 14px" onclick="resetWeights()">重置权重</button>'
     +'</div></div>';
 
-  if(!arr.length){el.innerHTML=renderPickLogBlock()+head+'<div class="empty">暂无 9:26 存档。交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动保存当日各板块选股（上方的选股记录则每次刷新都会留痕）。</div>';return;}
+  if(!arr.length){el.innerHTML=head+'<div class="empty">暂无 9:26 存档。交易日 9:25 前打开本页并保持，系统会在 9:26 竞价时自动保存当日各板块选股。手动记录见首页「选股记录 · 手动留痕」。</div>';return;}
   const blk=(title,items,sp)=>{const g=title.indexOf('竞价')===0?'auction':(title.indexOf('T+1')===0?'intra':(title.indexOf('盘中')===0?'intra':'trend')); const n=items?(items.length):0;
     const lis=(items&&items.length)?items.map(x=>{const r=rmap.get(sp.date+'|'+g+'|'+x.c);const dv=r?((g==='intra'?(r.r2!=null?r.r2:r.intra):r.intra)):null;const chip=r?('<span style="font-size:10px;color:'+(dv>=0?'var(--red)':'var(--green)')+';margin-left:4px">'+(dv>=0?'+':'')+dv+'%</span>'):'';return '<button class="sugbtn" onclick="monWatch(\''+x.c+'\')">'+x.n+chip+'</button>';}).join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>';
     return '<div style="margin:4px 0"><div style="font-size:11px;color:var(--muted)">'+title+'（'+n+'）</div>'+lis+'</div>';};
-  el.innerHTML=renderPickLogBlock()+head+arr.map(sp=>'<div class="card" style="margin-bottom:10px">'
+  el.innerHTML=head+arr.map(sp=>'<div class="card" style="margin-bottom:10px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>'+sp.date+' <span style="color:var(--muted);font-size:12px">'+sp.t+'</span></b>'
     +'<span style="color:var(--muted);font-size:11px">'+(sp.date===todayKey()?'今日':'历史')+'</span></div>'
     +blk('竞价强势',sp.auction,sp)+blk('当日大涨',sp.trend,sp)+blk('T+1选股',sp.intra,sp)
@@ -1684,6 +1689,8 @@ function snapHeartbeat(){
   setTimeout(snapHeartbeat,45000);
 }
 $('#btnSnap')?.addEventListener('click',toggleSnap);
+$('#btnPickLog')?.addEventListener('click',manualSnap);
+renderPickLog(); // 首页选股记录（本机历史）
 snapHeartbeat();
 monResume(); // 上次监测的个股自动恢复
 run();
