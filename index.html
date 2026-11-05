@@ -1588,10 +1588,10 @@ function renderPickLogBlock(){
     const lis=(items&&items.length)?items.map(chip).join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>';
     return '<div style="margin:3px 0"><div style="font-size:11px;color:var(--muted)">'+title+'（'+n+'）</div>'+lis+'</div>';
   };
-  const body=logs.length?logs.slice(0,20).map(rec=>'<div style="border-top:1px solid #f0f1f4;padding:7px 0">'
-      +'<div style="display:flex;justify-content:space-between;font-size:11.5px"><b>'+rec.date+' '+rec.t+'</b>'
+  const body=logs.length?logs.slice(0,20).map(rec=>{const ds=String(rec.date).replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');return '<div style="border-top:1px solid #f0f1f4;padding:7px 0">'
+      +'<div style="display:flex;justify-content:space-between;font-size:11.5px"><b>'+ds+' '+rec.t+'</b>'
       +'<span style="color:var(--muted)">'+rec.src+'</span></div>'
-      +grp('竞价强势',rec.auction)+grp('当日大涨',rec.trend)+grp('T+1选股',rec.intra)+'</div>').join('')
+      +grp('竞价强势',rec.auction)+grp('当日大涨',rec.trend)+grp('T+1选股',rec.intra)+'</div>';}).join('')
     :'<div class="empty">暂无记录。打开本页或点「执行实时选股」后会自动记录第一条。</div>';
   return '<div class="card" style="margin-bottom:10px">'
     +'<h3>记录明细（最近 20 条）</h3>'
