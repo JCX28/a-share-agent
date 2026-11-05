@@ -902,11 +902,18 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
     const chg=+s.changepercent||0; // 选股时的实时涨幅（盘中可知，无前视）
     const lim=detectLimitPct(s.name);
     const pos=dayPos(s), vw=vwapR(s), mins=elapsed(s);
+    // 早盘（9:45 前，开盘不足15分钟）：9:35 回测（20个交易日×180只主板×5分钟线，T→当日收盘）
+    //   涨幅 0.5~2% 均值 +0.08%、3~5% 均值 -1.1% → 追涨幅无效，权重降到约四成；
+    //   分时位置 0.9~1.0 均值 +0.90%（收绿40.7%）、0.7~0.9 -0.29%、0.2~0.45 -1.40% → 权重倒置；
+    //   昨日涨停 -1.77%、昨日跌超3% +0.24% → 早盘不奖励昨停，改奖励昨跌；
+    //   高开 0~1% +0.36%、2~4% -1.12%、>4% -1.79% → 早盘奖励平开附近、惩罚大幅高开。
+    const early=(mins!=null&&mins<15);
     let sc=0;
     // ① 选股时涨幅：回测单调递增（6~7% 组收→再涨≥2% 21.3%、≥3% 12.2%），越接近上限空间越小但不失强度
-    sc+=(chg>=6?26:chg>=5?22:chg>=4?18:chg>=3?14:chg>=2?10:6)*gw('gain');
-    // ② 分时位置：pos<0.2 均值-0.44%（砸盘）→ 重罚；0.45~0.9 最优
-    if(pos!=null)sc+=(pos<0.2?-25:pos<0.45?-8:pos<0.7?4:pos<0.9?6:2)*gw('pos');
+    sc+=(early?(chg>=6?10:chg>=5?9:chg>=4?7:chg>=3?6:chg>=2?4:2)
+              :(chg>=6?26:chg>=5?22:chg>=4?18:chg>=3?14:chg>=2?10:6))*gw('gain');
+    // ② 分时位置：pos<0.2 均值-0.44%（砸盘）→ 重罚；0.45~0.9 最优；早盘 0.9~1.0 最优
+    if(pos!=null)sc+=(pos<0.2?-25:pos<0.45?-8:pos<0.7?4:pos<0.9?(early?2:6):(early?8:2))*gw('pos');
     // ③ 现价/均价：<0.98 承接差（-0.47%）→ 重罚；>1.02 命中15.5%
     if(vw!=null)sc+=(vw<0.98?-15:vw>=1.02?6:0)*gw('vwap');
     // ④ 量能：盘中用「量比」按时间归一（relVol=今日累计量/前5日均量 ÷ 时间进度）；>2.5 命中18.2%
@@ -917,10 +924,20 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
     // ⑤ 时段：10~11点命中16.6%，14点后仅3.4% → 午后降权
     if(mins!=null)sc+=(mins>=270?-6:mins>=60&&mins<=120?3:0)*gw('time');
     // 昨日强弱（昨收可得）：昨停/昨大涨仍有惯性；昨跌深反抽在收盘口径下仍偏正（昨<-3% 命中13.1%）
+    //   早盘例外：昨停均值-1.77%（兑现盘），昨跌超3% +0.24%（低吸反抽），故不奖励昨停、改奖励昨跌；
+    //   早盘另加开盘缺口：0~1% 最优、≥2% 与 <-3% 均为负。
     if(km){
-      if(km.yestChg>=lim*0.97)sc+=8;
+      if(early){ sc+=(km.yestChg<-3?8:0); }
+      else if(km.yestChg>=lim*0.97)sc+=8;
       else if(km.yestChg>=7)sc+=5;
       else if(km.yestChg<-3)sc+=2;
+    }
+    if(early){
+      const stl=+s.settlement, op=+s.open;
+      if(stl>0&&op>0){
+        const og=(op/stl-1)*100;
+        sc+=(og>=0&&og<1?6:og>=2?-6:og<-3?-4:0)*gw('gap');
+      }
     }
     // 5日动量（截至昨收）：5~25% 最优，>40% 加速末段降权，<0 不宜
     if(km&&km.chg5!=null)sc+=(km.chg5>40?-4:km.chg5>25?2:km.chg5>=5?6:km.chg5>=0?2:-6)*gw('mom');
@@ -941,12 +958,29 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
   scaled.sort((a,b)=>b.sc-a.sc);
   return scaled.slice(0,n).map(x=>x.s).filter(Boolean);
 }
-function prelimTrendScore(s){ // 初选排序：选股时涨幅+分时位置+现价vs均价+换手+成交额+市值分档（不依赖K线，无前视）
+function sessMinsNow(){ // 当前距开盘的连续竞价分钟数（本地时钟，用于早盘口径切换）
+  const d=new Date(), m=d.getHours()*60+d.getMinutes();
+  if(m<=11*60+30)return Math.max(0,m-9*60-30);
+  if(m<13*60)return 120;
+  return Math.min(240,120+Math.max(0,m-13*60));
+}
+function prelimTrendScore(s, early){ // 初选排序：选股时涨幅+分时位置+现价vs均价+换手+成交额+市值分档（不依赖K线，无前视）
   const chg=Math.min(Math.max(+s.changepercent||0,0),7);
   const hi=+s.high||0, lo=+s.low||0, pr=+s.trade||0;
   const pos=(hi>lo&&pr)?(pr-lo)/(hi-lo):1;
   const fmc=(+s.nmc||0)/1e4; // 亿元
   const vw=(+s.amount&&+s.volume&&pr)?((+s.amount)/(+s.volume)):0; // 新浪 amount=元、volume=股
+  if(early){ // 早盘（9:45前）：涨幅仅作强弱参考（降权），分时位置越高越好（与收盘口径相反）
+    const stl=+s.settlement, op=+s.open;
+    const og=(stl>0&&op>0)?(op/stl-1)*100:null;
+    return chg*2.5
+          +(pos<0.2?-20:pos<0.45?-15:pos<0.7?-3:pos<0.9?-2:10)             // 0.9~1.0 最优
+          +(vw>0&&pr/vw<0.98?-12:0)
+          +(og==null?0:(og>=0&&og<1?8:og>=2?-8:og<-3?-6:0))                // 高开0~1%最优，大幅高开重罚
+          +Math.min((+s.turnoverratio||0)/15,1)*10
+          +Math.log10((+s.amount||0)+1)/12.5*20
+          +(fmc<=40?8:fmc<=80?10:fmc<=110?6:fmc<=150?0:-8);
+  }
   return chg*6                                                                 // 强者恒强（收盘口径回测单调）
         +(pos<0.2?-20:pos<0.45?-6:pos<0.7?6:pos<0.9?8:4)                       // 分时位置
         +(vw>0&&pr/vw<0.98?-12:0)                                              // 现价低于均价=承接差
@@ -1270,7 +1304,7 @@ async function run(){
       const vw=(+s.amount&&+s.volume&&pr)?((+s.amount)/(+s.volume)):0;
       if(vw>0&&hi&&lo&&vw>=lo*0.9&&vw<=hi*1.1&&pr/vw<0.98)return false; // 现价低于均价=承接差
       return true;})
-      .map(s=>({s,sc:prelimTrendScore(s)}))
+      .map(s=>({s,sc:prelimTrendScore(s,sessMinsNow()<15)}))
       .sort((a,b)=>b.sc-a.sc).slice(0,40).map(x=>x.s);
     const trendCands=trendShort.map(s=>s.code);
     // 竞价·强势候选：竞价高开 4%~8%（9:25撮合，9:26可知，无前视）+ 竞价换手率≥0.5% + 流通市值≤100亿
