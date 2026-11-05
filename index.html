@@ -191,7 +191,7 @@
 <div id="snapApp" style="display:none;padding:16px 20px 28px;max-width:1280px;margin:0 auto">
   <div class="card" style="margin-bottom:12px">
     <h3>选股记录 · 每次刷新自动留痕</h3>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">打开页面、自动刷新或手动执行选股，每一次结果都会记录一条（含「开盘涨幅」和「选股时涨幅」），最多保留最近 60 条，存于本机 localStorage。下方「对账闭环」仍只取交易日 9:25 前后的自动存档做收益回测，互不影响。</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">每次选股都会自动记录一条，触发方式分三种：<b>打开网页</b>（首次加载）、<b>自动刷新</b>（按设定间隔）、<b>手动执行</b>（点「执行实时选股」）。每条含「开盘涨幅」和「选股时涨幅」，最多保留最近 60 条，存于本机 localStorage。下方「对账闭环」仍只取交易日 9:25 前后的自动存档做收益回测，互不影响。</div>
     <button class="hbtn run" style="color:#fff;background:#b91c1c;border:none;padding:7px 16px" onclick="manualSnap()">立即记录当前选股</button>
   </div>
   <div class="card"><div id="snapList"><div class="empty">加载中…</div></div></div>
@@ -1205,7 +1205,9 @@ function setStatus(t,c){const el=$('#status');el.innerHTML=t;el.className='statu
 function running(on){$('#loading').style.display=on?'block':'none';$('#bar').style.display=on?'block':'none';}
 
 let __intraLock={ts:0,codes:[]}; // 盘中选股冻结：选中的票在冷却窗内不随auto-refresh换成"当前涨最高"的新票(防追日内顶)
+let __TRIGGER='打开网页'; // 触发方式：打开网页 / 自动刷新 / 手动执行
 async function run(){
+  const _trig=__TRIGGER; __TRIGGER='自动刷新';
   running(true);
   setStatus('正在连接数据源…','');
   const nTrend=Math.min(6,Math.max(1,+$('#nTrend').value||2));
@@ -1356,7 +1358,7 @@ async function run(){
     const __autoIntra=intraPicks.map(s=>snapRecord(s,klines[s.code]));
     __LASTPICK={auction:__autoAuction, trend:__autoTrend, intra:__autoIntra};
     maybeSaveSnap({auction:__autoAuction, trend:__autoTrend, intra:__autoIntra});
-    addPickLog(__autoAuction,__autoTrend,__autoIntra,'刷新');
+    addPickLog(__autoAuction,__autoTrend,__autoIntra,_trig);
 
     setStatus(`完成 · 当日大涨<b>${trendPicks.length}</b> + 竞价强势<b>${auctionPicks.length}</b> + T+1选股<b>${intraPicks.length}</b>。`,'ok');
   }catch(e){
@@ -1384,8 +1386,8 @@ function guideText(){
 }
 
 /* 事件 */
-$('#btnRun')?.addEventListener('click',run);
-$('#btnRun2')?.addEventListener('click',run);
+$('#btnRun')?.addEventListener('click',()=>{__TRIGGER='手动执行';run();});
+$('#btnRun2')?.addEventListener('click',()=>{__TRIGGER='手动执行';run();});
 $('#auto')?.addEventListener('change',(e)=>{
   if(timer)clearInterval(timer);
   const mins=+e.target.value;
@@ -1447,7 +1449,7 @@ function manualSnap(){
   const snap={date:key,t:pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()),auction,trend,intra};
   const arr=loadSnaps().filter(x=>x.date!==key); arr.unshift(snap); if(arr.length>30)arr.length=30;
   saveSnaps(arr); snapToday=key;
-  addPickLog(auction,trend,intra,'手动');
+  addPickLog(auction,trend,intra,'手动记录');
   renderSnaps();
 }
 /* ================== 闭环雏形：快照→次日收益对账→自动调参 ==================
