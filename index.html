@@ -139,14 +139,13 @@
   </div>
 
   <div class="card" id="pickLogCard" style="margin-top:16px">
-    <div class="mon-top">
+    <div class="mon-top" style="margin-bottom:0">
       <h3>选股记录 · 手动留痕</h3>
       <span class="mon-tag" id="pickLogTag">0 条</span>
       <div style="flex:1"></div>
       <button class="hbtn run" id="btnPickLog">记录选股</button>
     </div>
-    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">点「记录选股」把当前三个板块的选股结果存一条，含「开盘涨幅」与「选股时涨幅」，触发方式记为手动执行；最多保留最近 60 条，存于本机。</div>
-    <div id="pickLogList" style="max-height:320px;overflow:auto"></div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">点「记录选股」把当前三个板块的结果存一条（含开盘涨幅与选股时涨幅）；记录明细在顶部「对账闭环」里查看。</div>
   </div>
 </div>
 
@@ -200,6 +199,11 @@
 
 <!-- 对账闭环（原 9:26 自动存档） -->
 <div id="snapApp" style="display:none;padding:16px 20px 28px;max-width:1280px;margin:0 auto">
+  <div class="card" style="margin-bottom:12px">
+    <h3>选股记录 · 手动留痕</h3>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">每次点首页「记录选股」存一条，触发方式记为手动执行，最多保留最近 60 条；「开」=开盘涨幅，「选」=选股时涨幅，点股票名可直接跳到个股监测。</div>
+    <div id="pickLogList" style="max-height:420px;overflow:auto"></div>
+  </div>
   <div class="card"><div id="snapList"><div class="empty">加载中…</div></div></div>
 </div>
 
@@ -1678,7 +1682,7 @@ function toggleSnap(){
   sp.style.display=snapView?'block':'none';
   $('#btnSnap').style.background=snapView?'#fff':'';
   $('#btnSnap').style.color=snapView?'#b91c1c':'';
-  if(snapView)renderSnaps();
+  if(snapView){renderPickLog();renderSnaps();}
 }
 function snapHeartbeat(){
   const d=new Date();
