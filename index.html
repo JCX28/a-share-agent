@@ -1026,12 +1026,15 @@ function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
   return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,n);
 }
 
-/* 竞价·强势：竞价高开≥4%(9:25撮合,9:26可知,无前视)的池内，按"竞价换手率"降序推1只。
-   55日回测(每日取1只、封板口径)对比：
-     · 新规则 og∈[4,9.5) & 竞价换手率≥0.5% & 流通市值≤100亿，按竞价换手率降序 → 涨停62.2%(前62.5/后61.9)、T+1次收-1.10%、命中37.8%
-     · 同池改回"高开最低"升序 → 仅23.7%(前12.5/后31.8)、次收-3.01%
-     · 旧规则(加5日动量≥15 + 高开最低) → 38.9%(前37.5/后40.0)、次收-1.53%
-   竞价换手率=竞价成交额/流通市值，即"竞价真实资金介入强度"，是本池唯一通过分半验证的排序因子；5日动量在本池反成拖累(样本也过少)。 */
+/* 竞价·强势：竞价高开 4%~8%(9:25撮合,9:26可知,无前视)的池内，按综合分推1只。
+   55日回测(每日取1只、封板口径)：og∈[4,9.5)&竞价换手率≥0.5%&流通≤100亿、按竞价换手率降序 → 涨停62.2%；
+   但「封板率高」≠「买到赚钱」——2026-11 回测按买入价=竞价开盘价、看开→收：
+     · 高开4~5% 开→收+0.16%/炸板11%（最优）；5~6% -0.46%；6~7% -0.83%；7~8% -1.31%/炸板36%；8%以上 -2%~-2.9%
+     · 昨日涨幅<-5% 的高开反抽：封板16%/炸板31%/开→收-1.90%
+     · chg5 20~30% 开→收+0.57%（最佳），30~45% 转负，>45% 炸板35%
+   故：①高开上限收到8%（开盘即顶硬剔）；②排序键由"竞价换手率单键"改为综合分（高开甜点+竞价资金+动量+量能），
+   amtR 封顶2.5%并入评分——单一 amtR 排序会把"竞价巨量=高位分歧"的票直接顶到第一（2026-11 连续三日推荐
+   锡华科技/皇台酒业/扬子新材均属此列）；③昨跌>5%、chg5>30% 不再奖励。 */
 function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap){
   flows=flows||{};
   if(!(hotSector instanceof Set))hotSector=new Set();
@@ -1051,21 +1054,28 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const openGap=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0; // 集合竞价高开%（9:25 撮合价，9:26 可知，无前视）
     const vr=km?km.vr:0;
     const hot=hotSector.has(s.hybk);
-    const aw=wt('auction'); // 对账闭环可调权重（默认1=原策略；经"应用建议权重"写入 localStorage 后生效）
+    const amtR=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0); // 竞价换手率(竞价成交额/流通市值，9:26可得)
+    const fmc=(+s.nmc||0)/1e4; // 流通市值(亿)；新浪 nmc 单位万元
+    const aw=wt('auction'); // 对账闭环可调权重（默认1=本次校准值；经"应用建议权重"写入 localStorage 后生效）
     let sc=0;
-    sc+=Math.min(Math.max(openGap,0)/lim,1)*30*aw.og; // 竞价撮合价高开距涨停（无前视主信号；回测微降权，让位给5日动量）
-    sc+=(openGap>=2&&openGap<=8)?16*aw.og:(openGap>0&&openGap<2)?(openGap/2)*9*aw.og:(openGap>8&&openGap<10)?(22-(openGap-8)*4)*aw.og:0; // 高开强度带(2~8%最佳)
-    // ★开盘即顶防火（用户方向A+B：曾连续买在竞价最高点→开盘即回落，锦和+9.2%开→-11%、赛力斯+6.8%开→-4%）。
-    //   竞价评分原逻辑"高开越多越加分"，把濒临涨停/超高开的"开盘即顶"票推到第一——而回测显示高开>8% 开→收-2.16%(买在顶部无上行空间)。
-    //   故：高开≥9.5%(濒临涨停,无上行空间)直接剔除；>8% 重罚(越高越罚)，引导回落到开收有空间的 2~8% 理想带。(9:25撮合价已知,无前视)
-    if(openGap>=9.5){ sc=-1e9; }                    // 开盘即顶(近涨停)：无上行空间，硬剔
-    else if(openGap>8){ sc-=(openGap-8)*20*aw.og; } // 高开过热：每超1分罚20，9%→-20、10%→-40，强制沉底
-    sc+=(vr>=1.3&&vr<=3)?18*aw.vrMid:(vr>3)?26*aw.vrHi:(vr*8*aw.vrLo); // 量比·量能确认（昨日K线量比km.vr，9:26无前视；回测降权：量比封板区分度弱，仅作辅助）
-    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/25,1)*32*aw.chg5; // ★前5日动量·动能主导（无前视实证：chg5≥10封板28-29% vs chg5<10仅10%；顶格32分成为核心信号）
-    if(km&&km.chg5>=10)sc+=10*aw.chg5; // 动量强势确认加成（chg5≥10封板率显著抬升，9:26无前视）
+    // ★2026-11 回测（高开4~9.5%池 866样本/108日，买点=开盘价，看开→收）：
+    //   高开4~5%：开→收+0.16%、炸板11%（最优区）；5~6%：-0.46%；6~7%：-0.83%；7~8%：-1.31%/炸板36%。
+    //   → 高开越接近涨停，越容易"开盘即顶"，故高开强度带改为 4~5% 顶格、5~8% 递减。
+    sc+=Math.min(Math.max(openGap,0)/lim,1)*26*aw.og; // 竞价撮合价高开距涨停（无前视）
+    sc+=(openGap>=4&&openGap<5)?14*aw.og:8*aw.og;    // 高开甜点 4~5%
+    sc+=Math.min(amtR,2.5)/2.5*22*aw.amtR;           // ★竞价真实资金：并入综合分（封顶2.5%，超出多为对倒/分歧，不再加权）
+    if(openGap>=8) sc=-1e9;                          // ★开盘即顶硬剔（原为≥9.5%）：8~8.5% 炸板46%/开→收-2.92%、8.5~9.5% 开→收-1.79%
+    sc+=(vr>=1.2&&vr<=3)?16*aw.vrMid:(vr>3)?14*aw.vrHi:(vr<1.2?-10:vr*6*aw.vrLo); // 量比：回测≥1.2 封板38%/开→收转正，<1.2 明显更差
+    if(km)sc+=Math.min(Math.max(km.chg5||0,0)/25,1)*30*aw.chg5; // 前5日动量（无前视；chg5≥10封板率显著抬升）
+    if(km&&km.chg5>=10)sc+=8*aw.chg5; // 动量强势确认
+    // ★动量位置校准（回测）：chg5 20~30% 开→收+0.57%/封板47%（最佳），30~45% -0.89%，>45% 炸板35% → 末端加速不再奖励
+    if(km&&km.chg5>=20&&km.chg5<30)sc+=6*aw.chg5;
+    else if(km&&km.chg5>=30&&km.chg5<45)sc-=6*aw.chg5;
+    else if(km&&km.chg5>=45)sc-=10*aw.chg5;
     if(km&&km.ma5>km.ma10)sc+=4; // 均线多头加分（封板组多头率46% vs 非封板37%）
-    if(km&&km.yestChg>=lim*0.97)sc+=10*aw.yestZt; // 昨日涨停→今日高开接力（无前视；回测：连板次日+0.49% vs 首板-0.24%）
-    if(flow>0)sc+=Math.min(flow/5e8,1)*12*aw.flow; // 主力净流入
+    if(km&&km.yestChg>=lim*0.97)sc+=8*aw.yestZt; // 昨日涨停→今日高开接力（回测：昨涨停组封板44%/开→高3.06%）
+    if(km&&km.yestChg<-5)sc-=18; // ★昨跌>5%的高开=接刀反抽（回测封板16%/炸板31%/开→收-1.90%）
+    if(flow>0)sc+=Math.min(flow/5e8,1)*10*aw.flow; // 主力净流入
     if(hot)sc+=10*aw.hot; // 热门板块加分
     sc+=sentiment*6*aw.senti; // 市场情绪加成（回测降权：情绪对封板的边际区分有限）
     if(openGap<1.5)sc-=12*aw.smallPen; // 高开过小，距涨停太远
@@ -1077,19 +1087,18 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hasK=cands.filter(x=>klines[x.code]).length;
     const noKdata=hasK===0;                                    // 本轮竞价池几乎未取到任何K线(疑似上游批量失败)
     const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5&&!noKdata);
-    // ★竞价换手率 amtR(%)：竞价成交额/流通市值，即"竞价真实资金介入强度"（9:26 唯一可得，无前视）。
-    //   优先取新浪 turnoverratio（9:26 时当日累计成交=竞价成交，两者实为同一量，回测中位误差1.5%），缺失时用 amount/nmc 兜底。
-    const amtR=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
-    const fmc=(+s.nmc||0)/1e4; // 流通市值(亿)；新浪 nmc 单位万元
-    // ★降级：高开<4%不入池(回测og>=4封板37% vs 全市场2.78%)，高开≥9.5%开盘即顶无空间硬剔(9:25撮合价已知,无前视)。
+    // ★降级：高开<4%不入池(回测og>=4封板37% vs 全市场2.78%)，高开≥8%开盘即顶硬剔(9:25撮合价已知,无前视)。
     //   amtR<0.5%(竞价几乎无真实资金)与 fmc>100亿(大盘股弹性不足)同样硬剔：55日分半回测两维均单调改善、前后半同向。
-    return {sc, openGap, vr, amtR, trap:(noVolTrap||openGap<4||openGap>=9.5||amtR<0.5||(fmc>0&&fmc>100)), weak:(!km&&openGap>2.5&&noKdata)};
+    return {sc, openGap, vr, amtR, trap:(noVolTrap||openGap<4||openGap>=8||amtR<0.5||(fmc>0&&fmc>100)), weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
-  // ★排序：竞价换手率降序（竞价钱最多的那只）——综合分 sc 仅作 amtR 相同时的次序；无K线裸高开的 weak 兜底票沉底在末尾
+  // ★排序改为「综合分」降序（原为竞价换手率单一排序键：sc 只在 amtR 相等时生效，等于把"竞价换手最猛"直接当第一名）。
+  //   2026-11 连续三日推荐（锡华科技/皇台酒业/扬子新材）均属高位巨量分歧：扬子高开8.93%开盘即顶 -6.6%、
+  //   皇台4连板断板后高开5.32%、锡华首板次日高开4.33%冲高仅+0.96% → 单一 amtR 排序放大了"竞价巨量=分歧"的票。
+  //   现改为 综合分(高开甜点+竞价资金+动量+量能) 排序，amtR 仅作同分次序。
   scaled.sort((a,b)=>{
     if(a.ev.weak!==b.ev.weak)return a.ev.weak?1:-1;
-    return (b.ev.amtR-a.ev.amtR)||(b.ev.sc-a.ev.sc);
+    return (b.ev.sc-a.ev.sc)||(b.ev.amtR-a.ev.amtR);
   });
   return scaled.slice(0,Math.min(n,cands.length)).map(x=>{
     if(x.ev.weak)x.s._weak=true; // 标记：本轮K线缺失时的兜底裸高开票，供卡片提示"数据不足·仅供参考"
@@ -1230,14 +1239,15 @@ async function run(){
       .map(s=>({s,sc:prelimTrendScore(s)}))
       .sort((a,b)=>b.sc-a.sc).slice(0,40).map(x=>x.s);
     const trendCands=trendShort.map(s=>s.code);
-    // 竞价·强势候选：竞价高开≥4%（9:25撮合，9:26可知，无前视）+ 竞价换手率≥0.5% + 流通市值≤100亿，按竞价换手率降序
-    // ★门槛依据（55日、每日取1只、分半验证）：og≥4 为封板甜点；竞价换手率≥0.5% 与 流通≤100亿 两维均单调改善且前后半同向。宁缺毋滥，无合格票则空仓。
+    // 竞价·强势候选：竞价高开 4%~8%（9:25撮合，9:26可知，无前视）+ 竞价换手率≥0.5% + 流通市值≤100亿
+    // ★门槛依据（55日、每日取1只、分半验证）：og≥4 为封板甜点；竞价换手率≥0.5% 与 流通≤100亿 两维均单调改善且前后半同向。
+    //   上限由9.5%收到8%：8%以上开→收为负（见 buildAuctionPicks 回测注释）。预筛按综合分所需保留更多甜点票，截断放宽到40只。
     const _aucAmtR=s=>(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
     const auctionCands=stocks.filter(s=>{const l=detectLimitPct(s.name);
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
       const fmc=(+s.nmc||0)/1e4;
-      return og>=4&&og<l*0.95&&_aucAmtR(s)>=0.5&&!(fmc>0&&fmc>100);})
-      .sort((a,b)=>_aucAmtR(b)-_aucAmtR(a)).slice(0,20);
+      return og>=4&&og<8&&_aucAmtR(s)>=0.5&&!(fmc>0&&fmc>100);})
+      .sort((a,b)=>_aucAmtR(b)-_aucAmtR(a)).slice(0,40);
     // T+1选股大涨候选：平开/微高开[0,3%)、未涨停、换手≥1%（低吸留空间，非追涨；昨日涨停硬排除在 buildIntraPicks 细筛）
     // ★门槛放宽依据（回测55日、9:40买、次日T+1）：og<1 次日期望最优(+0.23%)但样本集中易空仓，放宽到 og<3 保证每日出票；
     //   昨日涨停股今日若不封板次日续跌概率大 → 硬排除；5日强势/换手活跃/主力流入为加分。
@@ -1323,7 +1333,7 @@ async function run(){
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
     $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无符合条件的票（需竞价高开0.5%~6%、未涨停、5日动量向上、均线多头）')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
-    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开4~9.5%、竞价换手率≥0.5%、流通市值≤100亿，按竞价换手率降序推1只）')+'</div>';
+    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开4%~8%、竞价换手率≥0.5%、流通市值≤100亿，按 高开甜点+竞价资金+动量+量能 综合分推1只）')+'</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的T+1大涨票（需平开/微高开0~3%、未涨停、换手≥1% 且无炸板）</div>';
     $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] T+1选股为"平开低吸+5日强势"（已剔除昨日涨停股），选中的票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶。</div>');
@@ -1487,7 +1497,7 @@ function wt(group){ // 当前权重缩放（默认1=未调参）；返回对象�
 }
 function defaultWt(group){
   return group==='auction'
-    ?{og:1, vrHi:1, vrMid:1, vrLo:1, chg5:1, yestZt:1, flow:1, hot:1, senti:1, smallPen:1, noVolPen:1}
+    ?{og:1, amtR:1, vrHi:1, vrMid:1, vrLo:1, chg5:1, yestZt:1, flow:1, hot:1, senti:1, smallPen:1, noVolPen:1}
     :{og:1, vr:1, turnover:1, amount:1, nmc:1, flow:1};
 }
 function buildEdgeReport(){ // 已对账样本 → 关键因子分桶胜率（统计用，供人工确认）
@@ -1508,7 +1518,7 @@ function suggestFromEdge(rep){ // 由分桶胜率给出"建议权重缩放"（�
   const gs=rep.auction, gt=rep.trend;
   const dir=(part)=>part?Math.max(-1,Math.min(1,(part.wr-55)/30)):0; // 胜率>55%→+正方向, <55%→负
   if(gs){
-    s.auction={og:1, vrHi:1, vrMid:1, vrLo:1, chg5:1, flow:1, hot:1, senti:1, smallPen:1, noVolPen:1};
+    s.auction={og:1, amtR:1, vrHi:1, vrMid:1, vrLo:1, chg5:1, flow:1, hot:1, senti:1, smallPen:1, noVolPen:1};
     // 竞价：量比高阶权重随"高量比分桶胜率 - 低量比分桶胜率"自适应
     const dVr=(gs.vrHi&&gs.vrLo)?(gs.vrHi.wr-gs.vrLo.wr)/20:(gs.vrHi?dir(gs.vrHi):0);
     s.auction.vrHi=+Math.max(0.5,1+dVr*0.5).toFixed(2); s.auction.vrLo=+Math.max(0.2,1+dVr*0.5).toFixed(2);
