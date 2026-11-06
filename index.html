@@ -67,6 +67,8 @@
   .rtag.warn{background:#fff4ed;color:#b54708}
   .rtag.danger{background:#fef3f2;color:#b42318}
   .rtag.ok{background:#ecfdf3;color:#067647}
+  .rtag.info{background:#eff4ff;color:#2563eb}
+  .rtag.mute{background:#f2f4f7;color:#667085}
   .why{font-size:12px;color:#4b5563;line-height:1.75;margin-top:8px;border-top:1px solid #f0f1f4;padding-top:8px}
   .why b{color:#7f1d1d}
   #loading{display:none;text-align:center;padding:14px;color:var(--muted);font-size:13px}
@@ -178,7 +180,7 @@
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
-      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标是「选股时刻 → 今日收盘」仍明显上涨（盘中任意时刻有效）。回测（主板×66日×15分钟，T时刻买入→收盘）：全样本再涨≥2% 命中9.7%；4~7% 组 ≥2% 命中 17%~21%，6~7% 最高。剔除：分时位置&lt;20%（砸盘，均值-0.44%）、现价/均价&lt;0.98（承接差，-0.47%）、盘中曾触及涨停后炸板。排序 = 选股时涨幅 + 分时位置 + 现价比均价 + 时间归一量比 + 昨日强弱；模拟每日取2只：≥2% 22%、平均收盘涨幅 5.56%（基准 2.43%）。</div>
+      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标是「选股时刻 → 今日收盘」仍明显上涨（盘中任意时刻有效）。回测（主板×66日×15分钟，T时刻买入→收盘）：全样本再涨≥2% 命中9.7%；4~7% 组 ≥2% 命中 17%~21%，6~7% 最高。剔除：分时位置&lt;20%（砸盘，均值-0.44%）、现价/均价&lt;0.98（承接差，-0.47%）、盘中曾触及涨停后炸板。排序 = 选股时涨幅 + 分时位置 + 现价比均价 + 时间归一量比 + 昨日强弱；模拟每日取2只：≥2% 22%、平均收盘涨幅 5.56%（基准 2.43%）。<b>三大关注</b>：①题材新鲜度（板块涨停梯队 今日 vs 昨日，新启动加分、连续热炒/退潮降权）②筹码洁净度（20日涨幅、距20日高回撤、昨日换手、连板）③分时强度（位置+现价/均价+时间归一量比）。</div>
     </div>
     <div class="group" id="gIntra">
       <div class="ghead"><span class="t-orange">T+1选股大涨 · 平开低吸</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
@@ -292,6 +294,20 @@ async function findTradingDay(){
   return {date:null,pool:[]};
 }
 
+async function findPrevPool(dateStr){ // 上一交易日涨停池（题材新鲜度：今日 vs 昨日板块家数）
+  if(!dateStr)return [];
+  const EM='https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=400&sort=fbt%3Aasc&date=';
+  const base=new Date(+dateStr.slice(0,4), +dateStr.slice(4,6)-1, +dateStr.slice(6,8));
+  for(let i=1;i<=4;i++){
+    const t=new Date(base.getTime()-i*86400000);
+    const ds=''+t.getFullYear()+String(t.getMonth()+1).padStart(2,'0')+String(t.getDate()).padStart(2,'0');
+    try{
+      const d=await jsonp(EM+ds,'cb',8000);
+      if(d&&d.data&&Array.isArray(d.data.pool)&&d.data.pool.length)return d.data.pool;
+    }catch(e){ break; } // 接口不可用就立即放弃，避免 4 次×8 秒拖慢选股
+  }
+  return [];
+}
 function mt(code){return /^6\d{5}$/.test(code)?'sh':'sz';}
 /* 新浪 JSONP 版K线（api/jsonp_v2.php 返回 "var x=[...]"）：script 注入不受 CORS 限制，公网纯静态站点可直接取K线 */
 function jsonpVar(url, varName, timeout=15000){
@@ -315,7 +331,8 @@ async function jsonpVars(tpl, timeout=12000){ // tpl 中用 %VAR% 占位变量�
 async function klineJsonp(ssym, scale, n){
   return jsonpVars(`https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20%VAR%=/CN_MarketData.getKLineData?symbol=${ssym}&scale=${scale}&ma=no&datalen=${n}`);
 }
-async function fetchKlines(codes, n=12){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
+async function fetchKlines(codes, n=22){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
+  // n=22：近20日区间（筹码洁净度：20日涨幅/距20日高回撤）需要足够的日K，原12根不足
   const out={};
   await poolRange(0, Math.max(0,codes.length-1), 7, async(i)=>{
     const c=codes[i]; const ssym=mt(c)+c;
@@ -359,6 +376,9 @@ function klineMetrics(kl){
   const vr=last.v/avg5;
   const idx5=Math.max(0,closes.length-6);
   const chg5=(last.c/closes[idx5]-1)*100;
+  const seg20=kl.slice(-20);                                  // 近20日区间（筹码洁净度用）
+  const high20=Math.max(...seg20.map(k=>k.h)), low20=Math.min(...seg20.map(k=>k.l));
+  const chg20=seg20.length>1?((last.c/seg20[0].c-1)*100):null;
   let lbc=0; const lim=n=>n;
   for(let i=kl.length-1;i>0;i--){
     const r=(kl[i].c/kl[i-1].c-1)*100;
@@ -370,8 +390,49 @@ function klineMetrics(kl){
   const _n=new Date(),_hm=_n.getHours()*60+_n.getMinutes();
   const _today=''+_n.getFullYear()+'-'+String(_n.getMonth()+1).padStart(2,'0')+'-'+String(_n.getDate()).padStart(2,'0');
   const intraday=(_hm>=570&&_hm<=690)&&last.d===_today;
+  const prevBar=(last.d===_today)?kl[kl.length-2]:last; // 上一交易日K线（盘中/收盘后 last=今日，盘前 last=昨日）
   return {price:last.c, vr, ma5, ma10, chg5, lbc, vol:last.v, yestChg, intraday,
+    high20, low20, chg20, volPrev:prevBar?prevBar.v:null,
     broke5:last.c<ma5, broke10:last.c<ma10};
+}
+/* ★选股三关注（用户口径）：
+   ①题材新鲜度 themeEval：今日/昨日涨停池的板块家数对比 → 新启动(今日成梯队、昨日没起来) > 主线延续 > 退潮
+   ②筹码洁净度 chipEval：近20日涨幅是否透支、距20日高回撤(上方套牢盘)、昨日换手(健康/分歧/过冷)、连板(获利盘松动)
+   ③分时强度 intraEval：分时位置 + 现价/均价 + 时间归一量比 → 强/偏强/中等/弱 */
+function chipEval(s, km){
+  let sc=0; const bits=[];
+  if(km&&km.chg20!=null){
+    const c20=km.chg20;
+    if(c20>40){sc-=6;bits.push('20日+'+c20.toFixed(0)+'%·涨幅透支');}
+    else if(c20>25){sc-=3;bits.push('20日+'+c20.toFixed(0)+'%·偏高位');}
+    else if(c20>=-10){sc+=2;bits.push('20日'+c20.toFixed(0)+'%·未大涨');}
+    else{sc-=3;bits.push('20日'+c20.toFixed(0)+'%·下跌趋势');}
+  }
+  const pr=+s.trade||0;
+  if(km&&km.high20&&pr>0){
+    const dd=(pr/km.high20-1)*100;
+    if(dd<=-20){sc-=4;bits.push('距20日高'+dd.toFixed(0)+'%·上方套牢盘重');}
+    else if(dd>=-5){sc+=2;bits.push('贴近20日高');}
+  }
+  // 昨日换手（前一日成交量/流通股本）：避开盘中累计换手率的时间失真
+  let tp=null; const nmc=+s.nmc||0;
+  if(km&&km.volPrev&&pr>0&&nmc>0)tp=km.volPrev/(nmc*1e4/pr)*100;
+  const hv=(tp!=null)?tp:(+s.turnoverratio||0);
+  if(hv>=3&&hv<15){sc+=4;bits.push('换手'+hv.toFixed(1)+'%·健康');}
+  else if(hv>=20){sc-=3;bits.push('换手'+hv.toFixed(1)+'%·分歧大');}
+  else if(hv<1.5){sc-=2;bits.push('换手'+hv.toFixed(1)+'%·过冷');}
+  if(km&&km.lbc>=2){sc-=3;bits.push('连板'+km.lbc+'·获利盘松动');}
+  const label=sc>=6?'干净':sc<=-5?'偏脏':'一般';
+  return {sc,label,cls:label==='干净'?'ok':label==='偏脏'?'warn':'mute',tp,chg20:km?km.chg20:null,bits};
+}
+function intraEval(pos, vw, relVol){
+  if(pos==null&&vw==null)return {v:0,label:'数据不足',cls:'mute'};
+  let v=0;
+  if(pos!=null)v+=pos>=0.75?3:pos>=0.45?2:pos>=0.2?1:0;
+  if(vw!=null)v+=vw>=1.02?2:vw>=1?1:0;
+  if(relVol!=null)v+=relVol>=2?2:relVol>=1.2?1:0;
+  const label=v>=6?'强':v>=4?'偏强':v>=2?'中等':'弱';
+  return {v,label,cls:v>=6?'ok':v>=4?'info':v>=2?'mute':'danger'};
 }
 
 
@@ -929,6 +990,11 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
     if(km&&km.intraday&&km.vr!=null&&mins!=null&&mins>=5)relVol=km.vr/Math.min(Math.max(mins/240,0.1),1);
     if(relVol!=null)sc+=(relVol>=2.5?8:relVol>=1.5?5:relVol>=0.8?2:-6)*gw('vr');
     else if(km&&km.vr!=null)sc+=(km.vr>=1.2?4:km.vr<0.8?-4:0)*gw('vr');
+    // ★三关注：②筹码洁净度（20日涨幅/距20日高/昨日换手/连板）+ ③分时强度标签；
+    //   ①题材新鲜度（新启动/延续/退潮）由 run() 在候选阶段预打标 s._themeSc，这里并入评分。
+    const chip=chipEval(s,km); sc+=chip.sc*gw('chip'); s._chip=chip;
+    sc+=((+s._themeSc)||0)*gw('theme');
+    s._istr=intraEval(pos,vw,relVol);
     // ⑤ 时段：10~11点命中16.6%，14点后仅3.4% → 午后降权
     if(mins!=null)sc+=(mins>=270?-6:mins>=60&&mins<=120?3:0)*gw('time');
     // 昨日强弱（昨收可得）：A 不奖励昨停、只奖励昨跌超3%（+0.24%）；B/C 昨跌超3% +0.05%/+1.52%，昨涨≥7% 转负（-0.57%/-1.28%）
@@ -982,7 +1048,8 @@ function prelimTrendScore(s, m){ // 初选排序：分时段标准（A 9:30~9:44
   const og=(stl>0&&op>0)?(op/stl-1)*100:null;
   const aux=Math.min((+s.turnoverratio||0)/15,1)*10
            +Math.log10((+s.amount||0)+1)/12.5*20
-           +(fmc<=40?8:fmc<=80?10:fmc<=110?6:fmc<=150?0:-8);          // 40~80亿最优，>150亿扣分
+           +(fmc<=40?8:fmc<=80?10:fmc<=110?6:fmc<=150?0:-8)          // 40~80亿最优，>150亿扣分
+           +((+s._themeSc)||0)*0.8;                                   // 题材新鲜度（初选阶段即参与排序）
   if(bkt==='A'){ // 封顶最强：位置越高越好，涨幅仅作强弱参考，高开0~1%最优
     return chg*2.5
           +(pos<0.2?-20:pos<0.45?-15:pos<0.7?-3:pos<0.9?-2:10)
@@ -1050,11 +1117,13 @@ function buildIntraPicks(cands, klines, flows, n){
     sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*6;                          // 小市值弹性
     if(vr<1.2)sc-=4;                                                      // 昨日量能不足
     if(flow>0)sc+=Math.min(flow/5e8,1)*8;                                // 主力净流入
-    return {sc, og, yestZt, chg5};
+    const chip=chipEval(s,km); sc+=chip.sc;                               // ②筹码洁净度：低吸更看重无上方套牢盘、换手健康
+    sc+=((+s._themeSc)||0);                                              // ①题材新鲜度（板块涨停梯队 今日vs昨日）
+    return {sc, og, yestZt, chg5, chip};
   };
   const scaled=cands.map(s=>({s,e:evalq(s)})).filter(x=>x.e);
   scaled.sort((a,b)=>b.e.sc-a.e.sc);
-  return scaled.slice(0,n).map(x=>{ x.s._iog=x.e.og; x.s._izt=x.e.yestZt; x.s._ichg5=x.e.chg5; return x.s; });
+  return scaled.slice(0,n).map(x=>{ x.s._iog=x.e.og; x.s._izt=x.e.yestZt; x.s._ichg5=x.e.chg5; x.s._chip=x.e.chip; return x.s; });
 }
 function intraCard(p, rank, km){
   const pct=p.changepercent.toFixed(2); const up=p.changepercent>=0;
@@ -1069,6 +1138,7 @@ function intraCard(p, rank, km){
     <div class="rk">${rank}</div>
     <div class="top"><span class="nm">${name}</span><span class="cd">${p.code}</span>
       <span class="pr ${up?'up':'down'}">${p.trade||'—'} ${up?'+':''}${pct}%</span></div>
+    ${focusRow(p)}
     <div class="bestrows">
       <div class="br"><div class="k">现涨幅</div><div class="v">${pct}%</div></div>
       <div class="br"><div class="k">开盘高开</div><div class="v">${og.toFixed(1)}%</div></div>
@@ -1081,9 +1151,19 @@ function intraCard(p, rank, km){
     <div class="why">${why}<br><span style="color:#991b1b">⚠ T+1选股为"低吸+5日强势"博弈（回测：平开回调池次日期望+0.23% vs 追涨池-1~-6%）；已硬排除昨日涨停/连板股（今日不封板则次日续跌概率大），仅供研究，非投资建议；破位/炸板须立即离场。</span></div>
   </div>`;
 }
-function sectorHeat(pickStocks, n){ // 从涨停池统计热门板块
-  const c={}; pickStocks.forEach(s=>{if(s.hybk){c[s.hybk]=c[s.hybk]||0;c[s.hybk]++;}});
-  return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,n);
+function themeEval(code, secToday, secPrev, ztMap, prevMap, hasPrev){ // 题材新鲜度：今日 vs 昨日涨停梯队家数
+  const sec=((ztMap&&ztMap.get(code))||{}).hybk || ((prevMap&&prevMap.get(code))||{}).hybk || null;
+  if(!sec)return {sec:null,sc:0,tag:'题材未识别',cls:'mute'};
+  const tc=secToday[sec]||0, yc=secPrev[sec]||0;
+  if(!hasPrev){ // 昨日池没取到 → 只判断今日是否有梯队，不标记新旧
+    return {sec,sc:tc>=3?5:tc>=1?2:0,tag:tc>=3?'板块成梯队':tc>=1?'板块有个股':"今日无梯队",cls:tc>=3?'ok':tc>=1?'mute':'warn'};
+  }
+  if(tc>=3&&yc<=1)return {sec,sc:8,tag:'新题材启动',cls:'ok'};       // 今日成梯队、昨日还没起来 = 最新
+  if(tc>=3&&yc>=4)return {sec,sc:-5,tag:'旧题材过热',cls:'warn'};     // 连续多日热炒，接力风险
+  if(tc>=2)return {sec,sc:4,tag:'主线延续',cls:'info'};
+  if(tc>=1&&yc>=3)return {sec,sc:-4,tag:'题材退潮',cls:'warn'};
+  if(tc>=1)return {sec,sc:2,tag:'板块有个股',cls:'mute'};
+  return {sec,sc:-1,tag:'今日无梯队',cls:'mute'};
 }
 
 /* 竞价·强势：竞价高开 4%~8%(9:25撮合,9:26可知,无前视)的池内，按综合分推2只（次选为备选）。
@@ -1137,6 +1217,8 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     if(km&&km.yestChg<-5)sc-=18; // ★昨跌>5%的高开=接刀反抽（回测封板16%/炸板31%/开→收-1.90%）
     if(flow>0)sc+=Math.min(flow/5e8,1)*10*aw.flow; // 主力净流入
     if(hot)sc+=10*aw.hot; // 热门板块加分
+    sc+=((+s._themeSc)||0)*2*(aw.theme===undefined?1:aw.theme); // ①题材新鲜度：新启动板块的竞价高开更易延续，退潮板块降权
+    if(km){const chip=chipEval(s,km); s._chip=chip; sc+=Math.max(chip.sc,-4)*0.8;} // ②筹码洁净度：高位/连板/巨换手降权（不清零，保留竞价接力模式）
     sc+=sentiment*6*aw.senti; // 市场情绪加成（回测降权：情绪对封板的边际区分有限）
     if(openGap<1.5)sc-=12*aw.smallPen; // 高开过小，距涨停太远
     if(vr<1.5)sc-=12*aw.noVolPen; // 无量惩罚：昨日K线量比小于1.5未放量，降权（滤除高开无量、冲高回落隐患）
@@ -1189,6 +1271,7 @@ function auctionCard(p, rank, km){
     <div class="top"><span class="nm">${name}</span><span class="cd">${p.code}</span>${rank===2?'<span class="tagc">备选</span>':''}
       <span class="pr ${up?'up':'down'}">${p.trade} ${up?'+':''}${pct}%</span></div>
     ${warn.length?`<div class="risk">${warn.join(' ')}</div>`:''}
+    ${focusRow(p)}
     <div class="bestrows">
       <div class="br"><div class="k">竞价高开</div><div class="v">${openGap}%</div></div>
       <div class="br"><div class="k">现涨幅</div><div class="v">${pct}%</div></div>
@@ -1202,6 +1285,17 @@ function auctionCard(p, rank, km){
 }
 
 /* ================== 渲染 ================== */
+const _dpOf=s=>{const hi=+s.high,lo=+s.low,pr=+s.trade;return (hi>lo&&pr)?(pr-lo)/(hi-lo):null;};
+const _vwOf=s=>{const a=+s.amount,v=+s.volume,pr=+s.trade;const w=(a&&v)?a/v:0;return (w>0&&pr)?pr/w:null;};
+function focusRow(p){ // ★选股三关注：题材新鲜度 / 筹码洁净度 / 分时强度（统一打在卡片上，便于一眼核对）
+  const t=[];
+  if(p._themeTag)t.push(`<span class="rtag ${p._themeCls||'mute'}">题材·${p._themeTag}${p._sec?'（'+p._sec+'）':''}</span>`);
+  if(p._chip)t.push(`<span class="rtag ${p._chip.cls}">筹码·${p._chip.label}${p._chip.chg20!=null?'（20日'+(p._chip.chg20>0?'+':'')+p._chip.chg20.toFixed(0)+'%）':''}</span>`);
+  const pos=p._ipos!=null?p._ipos:_dpOf(p), vw=p._ivwap!=null?p._ivwap:_vwOf(p);
+  const istr=p._istr||intraEval(pos,vw,p._relv!=null?p._relv:null);
+  if(istr)t.push(`<span class="rtag ${istr.cls}">分时·${istr.label}</span>`);
+  return t.length?`<div class="risk">${t.join(' ')}</div>`:'';
+}
 function pickCard(p, rank, isLimit, km){
   const limit=detectLimitPct(p.name);
   const pct=p.changepercent.toFixed(2);
@@ -1252,6 +1346,7 @@ function pickCard(p, rank, isLimit, km){
     <div class="rk">${rank}</div>
     <div class="top"><span class="nm">${name}</span><span class="cd">${p.code}</span>
       <span class="pr ${up?'up':'down'}">${p.trade} ${up?'+':''}${pct}%</span></div>
+    ${focusRow(p)}
     <div class="bestrows">
       <div class="br"><div class="k">${zt?'状态':'涨跌幅'}</div><div class="v">${zt?(lbc<=1?'首板':lbc+'板'):pct+'%'}</div></div>
       ${!zt?`<div class="br"><div class="k">开盘涨幅</div><div class="v" style="color:${og>0?'var(--red)':og<0?'var(--green)':'var(--text)'}">${og!=null?(og>0?'+':'')+og.toFixed(2)+'%':'—'}</div></div>`:''}
@@ -1304,6 +1399,20 @@ async function run(){
       src.push('<li><span class="ok">✓</span> 东方财富涨停池 <b>'+ztPool.length+'</b> 只（'+date+'）</li>');
     }catch(e){src.push('<li><span class="bad">✗</span> 涨停池失败：'+e.message+'</li>');}
     const ztMap=new Map(ztPool.filter(z=>isMainBoard(z.c)).map(z=>[z.c,z]));
+    // ★题材新鲜度基础盘：昨日涨停池（今日 vs 昨日的板块涨停家数对比）；取不到则降级为"只看今日梯队"
+    let prevPool=[];
+    try{ if(date)prevPool=await findPrevPool(date); }catch(e){}
+    if(prevPool.length)src.push('<li><span class="ok">✓</span> 昨日涨停池 <b>'+prevPool.length+'</b> 只（题材新鲜度对比）</li>');
+    const secToday={}, secPrev={}, prevMap=new Map();
+    ztPool.filter(z=>isMainBoard(z.c)).forEach(z=>{if(z.hybk)secToday[z.hybk]=(secToday[z.hybk]||0)+1;});
+    prevPool.filter(z=>isMainBoard(z.c)).forEach(z=>{if(z.hybk)secPrev[z.hybk]=(secPrev[z.hybk]||0)+1; prevMap.set(z.c,z);});
+    const _hasPrev=prevPool.length>0;
+    // 给全部主板股打上题材标（涨停梯队股才有板块归属，其余=题材未识别）
+    stocks.forEach(s=>{
+      const tt=themeEval(s.code,secToday,secPrev,ztMap,prevMap,_hasPrev);
+      s._sec=tt.sec; s._themeSc=tt.sc; s._themeTag=tt.tag; s._themeCls=tt.cls;
+      if(!s.hybk&&tt.sec)s.hybk=tt.sec;
+    });
 
     // 3) 候选K线（连板\|量比\|均线）
     setStatus('正在计算量能/均线指标…','ok');
@@ -1370,16 +1479,25 @@ async function run(){
     const _ztCnt=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95-0.01).length;
     const _upR=stocks.length?stocks.filter(s=>s.changepercent>0).length/stocks.length:0;
     const sentiment=Math.min(1,Math.max(0.2,_ztCnt/60*0.5+_upR*0.5));
-    // ★情绪门禁·只挡极弱、不空仓（用户反馈：弱市多次无推荐，稍作放宽）：
-    //   回测显示"仅保留最强"档胜率反而更高——弱市里选出的逆势强势票更强，完全停推反而错过机会。
-    //   故：<0.3(情绪冰点) 收缩到每板块仅推最强1只(不空仓)；0.3~0.4 不再减量，恢复正常发数。
+    // ★每次选股都做一次情绪结构判定：涨跌比 / 最高连板 / 板块梯队 一起看，给出进攻或防守口径
+    const upCount=stocks.filter(s=>s.changepercent>0).length;
+    const dnCount=stocks.filter(s=>s.changepercent<0).length;
+    const ztCount=_ztCnt;
+    const _ztM=ztPool.filter(z=>isMainBoard(z.c));
+    const _maxLb=_ztM.length?Math.max(..._ztM.map(z=>+z.lbc||1)):0;
+    const _dbR=dnCount>0?(upCount/dnCount):null;
+    const _stage=sentiment>0.72?'过热':sentiment>=0.55?'偏热':sentiment>=0.4?'正常':'偏弱';
+    const _sug=sentiment>0.72?'进攻转防守：只做回踩中位，不追高、不接力'
+      :sentiment>=0.55?'可进攻：新题材启动板块优先，正常仓位'
+      :sentiment>=0.4?'均衡：主线里选最强1-2只，回踩中位低吸'
+      :'防守：情绪偏弱，仅最强1只、轻仓试错';
     const _gateMsg=sentiment<0.3?'门禁·情绪极弱·仅推最强1只':'';
     const _sentiN=(base)=>sentiment<0.3?Math.min(1,base):base; // <0.3 冰点收缩到1只；≥0.3 按用户设定
     const nTrendE=_sentiN(nTrend), nAucE=_sentiN(2), nIntraE=_sentiN(nIntra);
     const _stTag=$('#sentiTrend');
     if(_stTag){
       _stTag.style.display='';
-      _stTag.textContent='市场情绪 '+(sentiment>0.72?'过热·谨慎追高':sentiment>=0.55?'偏热':sentiment>=0.4?'正常':'偏弱')+(_gateMsg?' · '+_gateMsg:'');
+      _stTag.textContent='市场情绪 '+sentiment.toFixed(2)+' · '+_stage+(_gateMsg?' · '+_gateMsg:'');
     }
     // ★先去重再选：当日大涨与竞价·强势口径有交集（竞价高开4%以上且当前涨幅仍在0.5~7%），
     //   竞价模块已选的票从当日大涨候选里剔除，避免同一只票在两个卡片重复出现（名额顺延给下一名）
@@ -1400,22 +1518,21 @@ async function run(){
     __intraLock.ts=Date.now(); __intraLock.codes=intraPicks.map(p=>p.code);
     [...trendPicks,...auctionPicks,...intraPicks].forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
 
-    // 5) 市场概览
+    // 5) 市场概览（含情绪结构 + 题材新鲜度）
     const m=$('#ov');
-    const upCount=stocks.filter(s=>s.changepercent>0).length;
-    const dnCount=stocks.filter(s=>s.changepercent<0).length;
-    const ztCount=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95-0.01).length;
-    const hot=sectorHeat([...trendPicks,...auctionPicks],5);
+    const hot=Object.entries(secToday).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>({k,v,y:secPrev[k]||0}));
 
     $("#gTrend").style.display='block';
     $("#gIntra").style.display='block';
     const settleTime=stocks[0]?.ticktime||'-';
     $('#datatime').innerHTML='数据时间：'+settleTime+(/^\d{2}:\d{2}:\d{2}$/.test(settleTime)?'（最近交易日收盘/盘中）':'');
-    m.innerHTML=`<div class="sect"><span>主板红盘家数</span><span class="n">${upCount}</span></div>
-      <div class="sect"><span>主板绿盘家数</span><span class="n" style="color:var(--green)">${dnCount}</span></div>
-      <div class="sect"><span>主板涨停家数</span><span class="n">${ztCount}</span></div>
-      <div class="note">情绪强弱：${ztCount>=60?'极强':ztCount>=30?'强':ztCount>=15?'中等':'弱'} · 涨跌比 ${ztCount>0&&dnCount>0?(upCount/dnCount).toFixed(1)+':1':'—'}</div>`;
-    if(hot.length){m.insertAdjacentHTML('beforeend','<div class="trend">'+hot.map(([k])=>`<span class="chi">${k}</span>`).join('')+'</div><div class="note">热门概念板块（含涨停梯队）</div>');}
+    m.innerHTML=`<div class="sect"><span>主板红盘 / 绿盘</span><span class="n">${upCount} <span style="color:var(--green);font-weight:600">/ ${dnCount}</span></span></div>
+      <div class="sect"><span>主板涨停 / 最高连板</span><span class="n">${ztCount} <span style="color:var(--muted);font-weight:500">/ ${_maxLb||'—'}板</span></span></div>
+      <div class="sect"><span>涨跌比 · 情绪分</span><span class="n">${_dbR!=null?_dbR.toFixed(1)+':1':'—'} · ${sentiment.toFixed(2)}</span></div>
+      <div class="note"><b>情绪判定：${_stage}</b> · ${_sug}</div>`;
+    if(hot.length){
+      m.insertAdjacentHTML('beforeend','<div class="trend">'+hot.map(h=>`<span class="chi">${h.k} ${h.v}家${_hasPrev?(h.y<=1?'·新':h.y>=4?'·老':''):''}</span>`).join('')+'</div><div class="note">主线题材（涨停家数'+(_hasPrev?' · 今日/昨日对比：新=昨日≤1家，老=昨日≥4家':' · 昨日池未取到')+'）</div>');
+    }
 
     // 6) 渲染
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
