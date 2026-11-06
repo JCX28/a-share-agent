@@ -331,6 +331,17 @@ async function jsonpVars(tpl, timeout=12000){ // tpl 中用 %VAR% 占位变量�
 async function klineJsonp(ssym, scale, n){
   return jsonpVars(`https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20%VAR%=/CN_MarketData.getKLineData?symbol=${ssym}&scale=${scale}&ma=no&datalen=${n}`);
 }
+async function fetchIndustry(codes){ // 东财批量行业归属(f100)：一次最多100+代码，用于"题材/板块"统一口径
+  const out={}; const cs=(codes||[]).filter(Boolean);
+  for(let i=0;i<cs.length;i+=100){
+    const secids=cs.slice(i,i+100).map(c=>(/^6/.test(c)?'1.':'0.')+c).join(',');
+    try{
+      const d=await jsonp('https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f12,f14,f100&secids='+secids,'cb',8000);
+      if(d&&d.data&&Array.isArray(d.data.diff))d.data.diff.forEach(o=>{if(o.f12&&o.f100&&o.f100!=='-')out[o.f12]=o.f100;});
+    }catch(e){break;} // 接口不可用即放弃，题材退化为"未识别"，不拖慢选股
+  }
+  return out;
+}
 async function fetchKlines(codes, n=22){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
   // n=22：近20日区间（筹码洁净度：20日涨幅/距20日高回撤）需要足够的日K，原12根不足
   const out={};
@@ -1048,8 +1059,7 @@ function prelimTrendScore(s, m){ // 初选排序：分时段标准（A 9:30~9:44
   const og=(stl>0&&op>0)?(op/stl-1)*100:null;
   const aux=Math.min((+s.turnoverratio||0)/15,1)*10
            +Math.log10((+s.amount||0)+1)/12.5*20
-           +(fmc<=40?8:fmc<=80?10:fmc<=110?6:fmc<=150?0:-8)          // 40~80亿最优，>150亿扣分
-           +((+s._themeSc)||0)*0.8;                                   // 题材新鲜度（初选阶段即参与排序）
+           +(fmc<=40?8:fmc<=80?10:fmc<=110?6:fmc<=150?0:-8);          // 40~80亿最优，>150亿扣分
   if(bkt==='A'){ // 封顶最强：位置越高越好，涨幅仅作强弱参考，高开0~1%最优
     return chg*2.5
           +(pos<0.2?-20:pos<0.45?-15:pos<0.7?-3:pos<0.9?-2:10)
@@ -1151,8 +1161,8 @@ function intraCard(p, rank, km){
     <div class="why">${why}<br><span style="color:#991b1b">⚠ T+1选股为"低吸+5日强势"博弈（回测：平开回调池次日期望+0.23% vs 追涨池-1~-6%）；已硬排除昨日涨停/连板股（今日不封板则次日续跌概率大），仅供研究，非投资建议；破位/炸板须立即离场。</span></div>
   </div>`;
 }
-function themeEval(code, secToday, secPrev, ztMap, prevMap, hasPrev){ // 题材新鲜度：今日 vs 昨日涨停梯队家数
-  const sec=((ztMap&&ztMap.get(code))||{}).hybk || ((prevMap&&prevMap.get(code))||{}).hybk || null;
+function themeEval(code, secToday, secPrev, ztMap, prevMap, hasPrev, indMap){ // 题材新鲜度：今日 vs 昨日涨停梯队家数
+  const sec=((indMap&&indMap[code])||((ztMap&&ztMap.get(code))||{}).hybk || ((prevMap&&prevMap.get(code))||{}).hybk || null);
   if(!sec)return {sec:null,sc:0,tag:'题材未识别',cls:'mute'};
   const tc=secToday[sec]||0, yc=secPrev[sec]||0;
   if(!hasPrev){ // 昨日池没取到 → 只判断今日是否有梯队，不标记新旧
@@ -1403,16 +1413,7 @@ async function run(){
     let prevPool=[];
     try{ if(date)prevPool=await findPrevPool(date); }catch(e){}
     if(prevPool.length)src.push('<li><span class="ok">✓</span> 昨日涨停池 <b>'+prevPool.length+'</b> 只（题材新鲜度对比）</li>');
-    const secToday={}, secPrev={}, prevMap=new Map();
-    ztPool.filter(z=>isMainBoard(z.c)).forEach(z=>{if(z.hybk)secToday[z.hybk]=(secToday[z.hybk]||0)+1;});
-    prevPool.filter(z=>isMainBoard(z.c)).forEach(z=>{if(z.hybk)secPrev[z.hybk]=(secPrev[z.hybk]||0)+1; prevMap.set(z.c,z);});
-    const _hasPrev=prevPool.length>0;
-    // 给全部主板股打上题材标（涨停梯队股才有板块归属，其余=题材未识别）
-    stocks.forEach(s=>{
-      const tt=themeEval(s.code,secToday,secPrev,ztMap,prevMap,_hasPrev);
-      s._sec=tt.sec; s._themeSc=tt.sc; s._themeTag=tt.tag; s._themeCls=tt.cls;
-      if(!s.hybk&&tt.sec)s.hybk=tt.sec;
-    });
+    const prevMap=new Map(prevPool.filter(z=>isMainBoard(z.c)).map(z=>[z.c,z]));
 
     // 3) 候选K线（连板\|量比\|均线）
     setStatus('正在计算量能/均线指标…','ok');
@@ -1455,6 +1456,27 @@ async function run(){
       if(og==null||og<0||og>=3)return false;
       if((+s.turnoverratio||0)<1)return false;
       return true;});
+    // ★题材新鲜度（统一行业口径）：候选股 + 今日/昨日涨停池 用东财 f100 行业，板块涨停家数才可跨股比较
+    setStatus('正在计算题材新鲜度…','');
+    const _indCodes=Array.from(new Set([...trendShort,...auctionCands,...intraShort].map(s=>s.code)
+      .concat(ztPool.filter(z=>isMainBoard(z.c)).map(z=>z.c))
+      .concat(prevPool.filter(z=>isMainBoard(z.c)).map(z=>z.c))));
+    const indMap=await fetchIndustry(_indCodes);
+    const _indN=Object.keys(indMap).length;
+    if(_indN)src.push('<li><span class="ok">✓</span> 行业归属 <b>'+_indN+'</b> 只（题材新鲜度口径）</li>');
+    else src.push('<li><span class="bad">⚠</span> 行业归属接口受限，题材新鲜度降级为"未识别"</li>');
+    const _secOf=z=>(indMap[z.c]||z.hybk||null);
+    const secToday={}, secPrev={};
+    ztPool.filter(z=>isMainBoard(z.c)).forEach(z=>{const sec=_secOf(z); if(sec)secToday[sec]=(secToday[sec]||0)+1;});
+    prevPool.filter(z=>isMainBoard(z.c)).forEach(z=>{const sec=_secOf(z); if(sec)secPrev[sec]=(secPrev[sec]||0)+1;});
+    const _hasPrev=Object.keys(secPrev).length>0;
+    ztSector=new Set(Object.keys(secToday)); // 竞价"热门板块"判断随之改成同一行业口径
+    // 只给三组候选打标（初选前无法知道行业，避免对全市场发请求）
+    [...trendShort,...auctionCands,...intraShort].forEach(s=>{
+      const tt=themeEval(s.code,secToday,secPrev,ztMap,prevMap,_hasPrev,indMap);
+      s._sec=tt.sec; s._themeSc=tt.sc; s._themeTag=tt.tag; s._themeCls=tt.cls;
+      if(!s.hybk&&tt.sec)s.hybk=tt.sec;
+    });
     const kNeed=Array.from(new Set([...limitCands,...trendCands,...auctionCands.map(s=>s.code),...intraShort.map(s=>s.code)]));
     const klines=await fetchKlines(kNeed);
     // ★修复K线结构：fetchKlines返回原始{day,open,...}数组，但下方build/渲染/snapRecord读的是ma5/ma10/chg5/vr/yestChg等指标对象，
