@@ -198,7 +198,7 @@
       <h3 style="margin:0">选股记录 · 手动留痕</h3>
       <span class="mon-tag" id="pickLogTag">0 条</span>
     </div>
-    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">每次点首页「记录选股」存一条，触发方式记为手动执行，最多保留最近 60 条；「开」=开盘涨幅，「选」=选股时涨幅，点股票名可直接跳到个股监测。</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">每次点首页「记录选股」存一条（同一记录间隔需 ≥5 分钟，5 分钟内重复点击不记录），触发方式记为手动执行，最多保留最近 60 条；「开」=开盘涨幅，「选」=选股时涨幅，点股票名可直接跳到个股监测。</div>
     <div id="pickLogList" style="max-height:420px;overflow:auto"></div>
   </div>
   <div class="card"><div id="snapList"><div class="empty">加载中…</div></div></div>
@@ -1523,8 +1523,16 @@ function getGroupPicks(sel){
   });
   return out;
 }
+const PLOG_GAP=5*60*1000; // 记录选股最小间隔：5 分钟（短时间重复点击不重复记录）
 function manualSnap(){
   const d=new Date(); const key=todayKey();
+  const last=(loadPickLog()[0]||{}).ts||0;
+  const left=PLOG_GAP-(Date.now()-last);
+  if(last&&left>0){
+    const s=Math.ceil(left/1000), mm=Math.floor(s/60), ss=s%60;
+    setStatus('距上次记录不足 5 分钟，请再等 '+(mm?mm+' 分 ':'')+ss+' 秒','bad');
+    return;
+  }
   let auction=getGroupPicks('#pAuction'), trend=getGroupPicks('#pTrend'), intra=getGroupPicks('#pIntra');
   const lp=__LASTPICK||{};
   if(lp.auction&&lp.auction.length)auction=lp.auction.map(x=>({c:x.c,n:x.n,p:x.p,g:x.g,f:x.f}));
@@ -1534,6 +1542,7 @@ function manualSnap(){
   const arr=loadSnaps().filter(x=>x.date!==key); arr.unshift(snap); if(arr.length>30)arr.length=30;
   saveSnaps(arr); snapToday=key;
   addPickLog(auction,trend,intra,'手动执行');
+  setStatus('已记录 '+snap.t+'（5 分钟内不重复记录）','ok');
   renderSnaps();
 }
 /* ================== 闭环雏形：快照→次日收益对账→自动调参 ==================
