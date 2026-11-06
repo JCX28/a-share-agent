@@ -180,7 +180,7 @@
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
-      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标是「选股时刻 → 今日收盘」仍明显上涨（盘中任意时刻有效）。回测（主板×66日×15分钟，T时刻买入→收盘）：全样本再涨≥2% 命中9.7%；4~7% 组 ≥2% 命中 17%~21%，6~7% 最高。剔除：分时位置&lt;20%（砸盘，均值-0.44%）、现价/均价&lt;0.98（承接差，-0.47%）、盘中曾触及涨停后炸板。排序 = 选股时涨幅 + 分时位置 + 现价比均价 + 时间归一量比 + 昨日强弱；模拟每日取2只：≥2% 22%、平均收盘涨幅 5.56%（基准 2.43%）。<b>三大关注</b>：①题材新鲜度（板块涨停梯队 今日 vs 昨日，新启动加分、连续热炒/退潮降权）②筹码洁净度（20日涨幅、距20日高回撤、昨日换手、连板）③分时强度（位置+现价/均价+时间归一量比）。</div>
+      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标是「选股时刻 → 今日收盘」仍明显上涨（盘中任意时刻有效）。回测（主板×66日×15分钟，T时刻买入→收盘）：全样本再涨≥2% 命中9.7%；4~7% 组 ≥2% 命中 17%~21%，6~7% 最高。剔除：分时位置&lt;20%（砸盘，均值-0.44%）、现价/均价&lt;0.98（承接差，-0.47%）、盘中曾触及涨停后炸板。排序 = 选股时涨幅 + 分时位置 + 现价比均价 + 时间归一量比 + 昨日强弱；模拟每日取2只：≥2% 22%、平均收盘涨幅 5.56%（基准 2.43%）。<b>两大关注</b>：①题材新鲜度（板块涨停梯队 今日 vs 昨日，新启动加分、连续热炒/退潮降权）②分时强度（位置+现价/均价+时间归一量比）。</div>
     </div>
     <div class="group" id="gIntra">
       <div class="ghead"><span class="t-orange">T+1选股大涨 · 平开低吸</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
@@ -342,8 +342,7 @@ async function fetchIndustry(codes){ // 东财批量行业归属(f100)：一次�
   }
   return out;
 }
-async function fetchKlines(codes, n=22){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
-  // n=22：近20日区间（筹码洁净度：20日涨幅/距20日高回撤）需要足够的日K，原12根不足
+async function fetchKlines(codes, n=12){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
   const out={};
   await poolRange(0, Math.max(0,codes.length-1), 7, async(i)=>{
     const c=codes[i]; const ssym=mt(c)+c;
@@ -387,9 +386,6 @@ function klineMetrics(kl){
   const vr=last.v/avg5;
   const idx5=Math.max(0,closes.length-6);
   const chg5=(last.c/closes[idx5]-1)*100;
-  const seg20=kl.slice(-20);                                  // 近20日区间（筹码洁净度用）
-  const high20=Math.max(...seg20.map(k=>k.h)), low20=Math.min(...seg20.map(k=>k.l));
-  const chg20=seg20.length>1?((last.c/seg20[0].c-1)*100):null;
   let lbc=0; const lim=n=>n;
   for(let i=kl.length-1;i>0;i--){
     const r=(kl[i].c/kl[i-1].c-1)*100;
@@ -401,41 +397,12 @@ function klineMetrics(kl){
   const _n=new Date(),_hm=_n.getHours()*60+_n.getMinutes();
   const _today=''+_n.getFullYear()+'-'+String(_n.getMonth()+1).padStart(2,'0')+'-'+String(_n.getDate()).padStart(2,'0');
   const intraday=(_hm>=570&&_hm<=690)&&last.d===_today;
-  const prevBar=(last.d===_today)?kl[kl.length-2]:last; // 上一交易日K线（盘中/收盘后 last=今日，盘前 last=昨日）
   return {price:last.c, vr, ma5, ma10, chg5, lbc, vol:last.v, yestChg, intraday,
-    high20, low20, chg20, volPrev:prevBar?prevBar.v:null,
     broke5:last.c<ma5, broke10:last.c<ma10};
 }
-/* ★选股三关注（用户口径）：
+/* ★选股两关注（用户口径）：
    ①题材新鲜度 themeEval：今日/昨日涨停池的板块家数对比 → 新启动(今日成梯队、昨日没起来) > 主线延续 > 退潮
-   ②筹码洁净度 chipEval：近20日涨幅是否透支、距20日高回撤(上方套牢盘)、昨日换手(健康/分歧/过冷)、连板(获利盘松动)
-   ③分时强度 intraEval：分时位置 + 现价/均价 + 时间归一量比 → 强/偏强/中等/弱 */
-function chipEval(s, km){
-  let sc=0; const bits=[];
-  if(km&&km.chg20!=null){
-    const c20=km.chg20;
-    if(c20>40){sc-=6;bits.push('20日+'+c20.toFixed(0)+'%·涨幅透支');}
-    else if(c20>25){sc-=3;bits.push('20日+'+c20.toFixed(0)+'%·偏高位');}
-    else if(c20>=-10){sc+=2;bits.push('20日'+c20.toFixed(0)+'%·未大涨');}
-    else{sc-=3;bits.push('20日'+c20.toFixed(0)+'%·下跌趋势');}
-  }
-  const pr=+s.trade||0;
-  if(km&&km.high20&&pr>0){
-    const dd=(pr/km.high20-1)*100;
-    if(dd<=-20){sc-=4;bits.push('距20日高'+dd.toFixed(0)+'%·上方套牢盘重');}
-    else if(dd>=-5){sc+=2;bits.push('贴近20日高');}
-  }
-  // 昨日换手（前一日成交量/流通股本）：避开盘中累计换手率的时间失真
-  let tp=null; const nmc=+s.nmc||0;
-  if(km&&km.volPrev&&pr>0&&nmc>0)tp=km.volPrev/(nmc*1e4/pr)*100;
-  const hv=(tp!=null)?tp:(+s.turnoverratio||0);
-  if(hv>=3&&hv<15){sc+=4;bits.push('换手'+hv.toFixed(1)+'%·健康');}
-  else if(hv>=20){sc-=3;bits.push('换手'+hv.toFixed(1)+'%·分歧大');}
-  else if(hv<1.5){sc-=2;bits.push('换手'+hv.toFixed(1)+'%·过冷');}
-  if(km&&km.lbc>=2){sc-=3;bits.push('连板'+km.lbc+'·获利盘松动');}
-  const label=sc>=6?'干净':sc<=-5?'偏脏':'一般';
-  return {sc,label,cls:label==='干净'?'ok':label==='偏脏'?'warn':'mute',tp,chg20:km?km.chg20:null,bits};
-}
+   ②分时强度 intraEval：分时位置 + 现价/均价 + 时间归一量比 → 强/偏强/中等/弱 */
 function intraEval(pos, vw, relVol){
   if(pos==null&&vw==null)return {v:0,label:'数据不足',cls:'mute'};
   let v=0;
@@ -1001,9 +968,7 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
     if(km&&km.intraday&&km.vr!=null&&mins!=null&&mins>=5)relVol=km.vr/Math.min(Math.max(mins/240,0.1),1);
     if(relVol!=null)sc+=(relVol>=2.5?8:relVol>=1.5?5:relVol>=0.8?2:-6)*gw('vr');
     else if(km&&km.vr!=null)sc+=(km.vr>=1.2?4:km.vr<0.8?-4:0)*gw('vr');
-    // ★三关注：②筹码洁净度（20日涨幅/距20日高/昨日换手/连板）+ ③分时强度标签；
-    //   ①题材新鲜度（新启动/延续/退潮）由 run() 在候选阶段预打标 s._themeSc，这里并入评分。
-    const chip=chipEval(s,km); sc+=chip.sc*gw('chip'); s._chip=chip;
+    // ★两关注：②分时强度标签；①题材新鲜度（新启动/延续/退潮）由 run() 在候选阶段预打标 s._themeSc，这里并入评分。
     sc+=((+s._themeSc)||0)*gw('theme');
     s._istr=intraEval(pos,vw,relVol);
     // ⑤ 时段：10~11点命中16.6%，14点后仅3.4% → 午后降权
@@ -1127,13 +1092,12 @@ function buildIntraPicks(cands, klines, flows, n){
     sc+=Math.max(0,1-Math.log10(nmc*1e4)/10)*6;                          // 小市值弹性
     if(vr<1.2)sc-=4;                                                      // 昨日量能不足
     if(flow>0)sc+=Math.min(flow/5e8,1)*8;                                // 主力净流入
-    const chip=chipEval(s,km); sc+=chip.sc;                               // ②筹码洁净度：低吸更看重无上方套牢盘、换手健康
     sc+=((+s._themeSc)||0);                                              // ①题材新鲜度（板块涨停梯队 今日vs昨日）
-    return {sc, og, yestZt, chg5, chip};
+    return {sc, og, yestZt, chg5};
   };
   const scaled=cands.map(s=>({s,e:evalq(s)})).filter(x=>x.e);
   scaled.sort((a,b)=>b.e.sc-a.e.sc);
-  return scaled.slice(0,n).map(x=>{ x.s._iog=x.e.og; x.s._izt=x.e.yestZt; x.s._ichg5=x.e.chg5; x.s._chip=x.e.chip; return x.s; });
+  return scaled.slice(0,n).map(x=>{ x.s._iog=x.e.og; x.s._izt=x.e.yestZt; x.s._ichg5=x.e.chg5; return x.s; });
 }
 function intraCard(p, rank, km){
   const pct=p.changepercent.toFixed(2); const up=p.changepercent>=0;
@@ -1228,7 +1192,6 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     if(flow>0)sc+=Math.min(flow/5e8,1)*10*aw.flow; // 主力净流入
     if(hot)sc+=10*aw.hot; // 热门板块加分
     sc+=((+s._themeSc)||0)*2*(aw.theme===undefined?1:aw.theme); // ①题材新鲜度：新启动板块的竞价高开更易延续，退潮板块降权
-    if(km){const chip=chipEval(s,km); s._chip=chip; sc+=Math.max(chip.sc,-4)*0.8;} // ②筹码洁净度：高位/连板/巨换手降权（不清零，保留竞价接力模式）
     sc+=sentiment*6*aw.senti; // 市场情绪加成（回测降权：情绪对封板的边际区分有限）
     if(openGap<1.5)sc-=12*aw.smallPen; // 高开过小，距涨停太远
     if(vr<1.5)sc-=12*aw.noVolPen; // 无量惩罚：昨日K线量比小于1.5未放量，降权（滤除高开无量、冲高回落隐患）
@@ -1297,10 +1260,9 @@ function auctionCard(p, rank, km){
 /* ================== 渲染 ================== */
 const _dpOf=s=>{const hi=+s.high,lo=+s.low,pr=+s.trade;return (hi>lo&&pr)?(pr-lo)/(hi-lo):null;};
 const _vwOf=s=>{const a=+s.amount,v=+s.volume,pr=+s.trade;const w=(a&&v)?a/v:0;return (w>0&&pr)?pr/w:null;};
-function focusRow(p){ // ★选股三关注：题材新鲜度 / 筹码洁净度 / 分时强度（统一打在卡片上，便于一眼核对）
+function focusRow(p){ // ★选股两关注：题材新鲜度 / 分时强度（统一打在卡片上，便于一眼核对）
   const t=[];
   if(p._themeTag)t.push(`<span class="rtag ${p._themeCls||'mute'}">题材·${p._themeTag}${p._sec?'（'+p._sec+'）':''}</span>`);
-  if(p._chip)t.push(`<span class="rtag ${p._chip.cls}">筹码·${p._chip.label}${p._chip.chg20!=null?'（20日'+(p._chip.chg20>0?'+':'')+p._chip.chg20.toFixed(0)+'%）':''}</span>`);
   const pos=p._ipos!=null?p._ipos:_dpOf(p), vw=p._ivwap!=null?p._ivwap:_vwOf(p);
   const istr=p._istr||intraEval(pos,vw,p._relv!=null?p._relv:null);
   if(istr)t.push(`<span class="rtag ${istr.cls}">分时·${istr.label}</span>`);
