@@ -1140,7 +1140,7 @@ function themeEval(code, secToday, secPrev, ztMap, prevMap, hasPrev, indMap){ //
   return {sec,sc:-1,tag:'今日无梯队',cls:'mute'};
 }
 
-/* 竞价·强势：竞价高开 3.7%~5.7%(9:25撮合,9:26可知,无前视)的池内，按综合分推2只（次选为备选）。
+/* 竞价·强势：竞价高开 2.7%~5.7%(9:25撮合,9:26可知,无前视)的池内，按综合分推2只（次选为备选）。
    55日回测(每日取1只、封板口径)：og∈[4,9.5)&竞价换手率≥0.5%&流通≤100亿、按竞价换手率降序 → 涨停62.2%；
    但「封板率高」≠「买到赚钱」——2026-11 回测按买入价=竞价开盘价、看开→收：
      · 高开4~5% 开→收+0.16%/炸板11%（最优）；5~6% -0.46%；6~7% -0.83%；7~8% -1.31%/炸板36%；8%以上 -2%~-2.9%
@@ -1202,9 +1202,9 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hasK=cands.filter(x=>klines[x.code]).length;
     const noKdata=hasK===0;                                    // 本轮竞价池几乎未取到任何K线(疑似上游批量失败)
     const noVolTrap=(km&&km.vr<1.2&&(openGap>2.5||vr<0.85))||(!km&&openGap>2.5&&!noKdata);
-    // ★降级：高开<3.7%不入池(回测og>=4封板37% vs 全市场2.78%)，高开>5.7%不选(用户口径，开盘溢价透支)。
+    // ★降级：高开<2.7%不入池(回测og>=4封板37% vs 全市场2.78%)，高开>5.7%不选(用户口径，开盘溢价透支)。
     //   amtR<0.5%(竞价几乎无真实资金)与 fmc>100亿(大盘股弹性不足)同样硬剔：55日分半回测两维均单调改善、前后半同向。
-    return {sc, openGap, vr, amtR, trap:(noVolTrap||openGap<3.7||openGap>5.7||amtR<0.5||(fmc>0&&fmc>100)), weak:(!km&&openGap>2.5&&noKdata)};
+    return {sc, openGap, vr, amtR, trap:(noVolTrap||openGap<2.7||openGap>5.7||amtR<0.5||(fmc>0&&fmc>100)), weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
   // ★排序改为「综合分」降序（原为竞价换手率单一排序键：sc 只在 amtR 相等时生效，等于把"竞价换手最猛"直接当第一名）。
@@ -1401,14 +1401,14 @@ async function run(){
       .map(s=>({s,sc:prelimTrendScore(s,sessMinsNow())}))
       .sort((a,b)=>b.sc-a.sc).slice(0,40).map(x=>x.s);
     const trendCands=trendShort.map(s=>s.code);
-    // 竞价·强势候选：竞价高开 3.7%~5.7%（9:25撮合，9:26可知，无前视）+ 竞价换手率≥0.5% + 流通市值≤100亿
+    // 竞价·强势候选：竞价高开 2.7%~5.7%（9:25撮合，9:26可知，无前视）+ 竞价换手率≥0.5% + 流通市值≤100亿
     // ★门槛依据（55日、每日取1只、分半验证）：og≥4 为封板甜点；竞价换手率≥0.5% 与 流通≤100亿 两维均单调改善且前后半同向。
-    //   区间：下限放宽到 3.7%、上限收到 5.7%（用户口径：高开>5.7% 一律不选）。预筛按综合分所需保留更多甜点票，截断放宽到40只。
+    //   区间：下限 2.7%、上限 5.7%（用户口径：高开>5.7% 一律不选）。下限放宽可多出约 4 成候选，但封板率与次日溢价会下降。
     const _aucAmtR=s=>(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
     let auctionCands=stocks.filter(s=>{const l=detectLimitPct(s.name);
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
       const fmc=(+s.nmc||0)/1e4;
-      return og>=3.7&&og<=5.7&&_aucAmtR(s)>=0.5&&!(fmc>0&&fmc>100);})
+      return og>=2.7&&og<=5.7&&_aucAmtR(s)>=0.5&&!(fmc>0&&fmc>100);})
       .sort((a,b)=>_aucAmtR(b)-_aucAmtR(a)).slice(0,40);
     // T+1选股大涨候选：平开/微高开[0,3%)、未涨停、换手≥1%（低吸留空间，非追涨；昨日涨停硬排除在 buildIntraPicks 细筛）
     // ★门槛放宽依据（回测55日、9:40买、次日T+1）：og<1 次日期望最优(+0.23%)但样本集中易空仓，放宽到 og<3 保证每日出票；
@@ -1532,7 +1532,7 @@ async function run(){
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
     $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无符合条件的票（需选股时涨幅0.5%~7%、高开≤5.7%且未涨停、分时位置≥20%、现价不低于均价）')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
-    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开3.7%~5.7%、竞价换手率≥0.5%、流通市值≤100亿，按 高开甜点+竞价资金+动量+量能 综合分推2只）')+'</div>';
+    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开2.7%~5.7%、竞价换手率≥0.5%、流通市值≤100亿，按 高开甜点+竞价资金+动量+量能 综合分推2只）')+'</div>';
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的T+1大涨票（需平开/微高开0~3%、未涨停、换手≥1% 且无炸板）</div>';
     $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] T+1选股为"平开低吸+5日强势"（已剔除昨日涨停股），选中的票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶。</div>');
@@ -1575,7 +1575,7 @@ function guideText(){
       <li><b>有逻辑的票</b>：基本面逻辑（如成本革命→利润释放）驱动主升浪（课程26；DOCX《短剧逻辑之于化工》）。</li>
       <li><b>风控纪律</b>：主板股<b>破10日线离场</b>、情绪看涨跌家数/最高连板/热门板块；轻仓保盈亏比。</li>
       <li><b>高位不接力</b>：<b>连板≥4 一律不推荐</b>（4板以上属高位接力，断板/炸板后回落幅度大），候选阶段直接剔除。</li>
-      <li><b>高开不追</b>：<b>竞价高开&gt;5.7% 一律不选</b>（开盘溢价透支、冲高回落概率大），竞价强势模块口径收窄为 3.7%~5.7%。</li>
+      <li><b>高开不追</b>：<b>竞价高开&gt;5.7% 一律不选</b>（开盘溢价透支、冲高回落概率大），竞价强势模块口径为 2.7%~5.7%。</li>
     </ul>
     <p style="color:#991b1b"><b>风险提示：</b>以下结果由实时行情与规则自动推演生成，仅供研究参考，<b>不构成任何投资建议</b>。市场有风险，追高/接盘风险需自行控制。</p>
   </div>`;
