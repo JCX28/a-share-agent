@@ -1218,6 +1218,18 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     if(a.ev.weak!==b.ev.weak)return a.ev.weak?1:-1;
     return (b.ev.sc-a.ev.sc)||(b.ev.amtR-a.ev.amtR);
   });
+  // ★备选(第2只)单独排序：首选仍取综合分第1；备选在其余票中按「综合分 − 无量惩罚(量比<1.2 扣30)」重排。
+  //   20日回测：直接取第2名 封板62%/开→收+2.77%/胜率75% → 加无量惩罚后 封板69%/+3.20%/81%。
+  //   理由：备选是"首选买不到时的替代"，必须已见真实资金介入；量比<1.2 的票(粤宏远0.24/东方海洋0.80/上海九百0.83)当日多为冲高回落。
+  if(scaled.length>1){
+    const _bk=z=>z.ev.sc-(z.ev.vr<1.2?30:0);
+    const _head=scaled[0];
+    const _rest=scaled.slice(1).sort((a,b)=>{
+      if(a.ev.weak!==b.ev.weak)return a.ev.weak?1:-1;
+      return (_bk(b)-_bk(a))||(b.ev.amtR-a.ev.amtR);
+    });
+    scaled.length=0; scaled.push(_head,..._rest);
+  }
   return scaled.slice(0,Math.min(n,cands.length)).map(x=>{
     if(x.ev.weak)x.s._weak=true; // 标记：本轮K线缺失时的兜底裸高开票，供卡片提示"数据不足·仅供参考"
     return x.s;
