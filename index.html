@@ -1382,7 +1382,7 @@ async function run(){
     const limitCands=stocks.filter(s=>s.changepercent>=detectLimitPct(s.name)*0.95).slice(0,24).map(s=>s.code);
     // 当日大涨候选：以「选股时刻」为起点 → 今日收盘仍有望大涨（盘中任意时刻可用）
     //   回测（15分钟线，T→收盘）：选股时涨幅 0.5%~7% 内越强越好（6~7% 命中21.3%）；pos<0.2（砸盘）与 P/VWAP<0.98（承接差）为负期望 → 硬剔。
-    const trendShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
+    let trendShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
       if(/ST/.test(s.name))return false;
       const chg=+s.changepercent||0;
       const hi=+s.high||0, lo=+s.low||0, pr=+s.trade||0, stl=+s.settlement||0;
@@ -1403,7 +1403,7 @@ async function run(){
     // ★门槛依据（55日、每日取1只、分半验证）：og≥4 为封板甜点；竞价换手率≥0.5% 与 流通≤100亿 两维均单调改善且前后半同向。
     //   上限由9.5%收到8%：8%以上开→收为负（见 buildAuctionPicks 回测注释）。预筛按综合分所需保留更多甜点票，截断放宽到40只。
     const _aucAmtR=s=>(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
-    const auctionCands=stocks.filter(s=>{const l=detectLimitPct(s.name);
+    let auctionCands=stocks.filter(s=>{const l=detectLimitPct(s.name);
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):0;
       const fmc=(+s.nmc||0)/1e4;
       return og>=4&&og<8&&_aucAmtR(s)>=0.5&&!(fmc>0&&fmc>100);})
@@ -1411,7 +1411,7 @@ async function run(){
     // T+1选股大涨候选：平开/微高开[0,3%)、未涨停、换手≥1%（低吸留空间，非追涨；昨日涨停硬排除在 buildIntraPicks 细筛）
     // ★门槛放宽依据（回测55日、9:40买、次日T+1）：og<1 次日期望最优(+0.23%)但样本集中易空仓，放宽到 og<3 保证每日出票；
     //   昨日涨停股今日若不封板次日续跌概率大 → 硬排除；5日强势/换手活跃/主力流入为加分。
-    const intraShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
+    let intraShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
       if(/ST/.test(s.name))return false;
       if((+s.changepercent||0)>=l*0.9)return false;
       const og=(+s.open&&+s.settlement)?((+s.open/+s.settlement-1)*100):null;
@@ -1446,6 +1446,14 @@ async function run(){
     for(const _c in klines){ klines[_c]=klineMetrics(klines[_c]); }
     const kc=Object.keys(klines).length;
     src.push('<li><span class="ok">✓</span> 新浪K线 <b>'+kc+'</b> 条（量比/均线/连板）</li>');
+    // ★连板≥4 不推荐：4板及以上属高位接力，断板/炸板后回落幅度大 → 直接从三组候选剔除（K线缺失者不误杀）
+    const _hot4=c=>{const m=klines[c]; return !!(m&&m.lbc>=4);};
+    const _cntBefore=trendShort.length+auctionCands.length+intraShort.length;
+    trendShort=trendShort.filter(s=>!_hot4(s.code));
+    auctionCands=auctionCands.filter(s=>!_hot4(s.code));
+    intraShort=intraShort.filter(s=>!_hot4(s.code));
+    const _cut4=_cntBefore-(trendShort.length+auctionCands.length+intraShort.length);
+    src.push('<li><span class="ok">✓</span> 连板≥4 剔除 <b>'+_cut4+'</b> 只（高位接力不推荐）</li>');
 
     // 3.5) 主力净流入（新浪资金流·仅取高分候选，降低请求量防限流）
     setStatus('正在拉取主力资金流…','');
@@ -1564,6 +1572,7 @@ function guideText(){
       <li><b>封单与换手成本</b>：封单越扎实越稳、警惕高换手分歧与一字板断板接盘（课程03/16；JPG《一字连板断板后千万不要追》）。</li>
       <li><b>有逻辑的票</b>：基本面逻辑（如成本革命→利润释放）驱动主升浪（课程26；DOCX《短剧逻辑之于化工》）。</li>
       <li><b>风控纪律</b>：主板股<b>破10日线离场</b>、情绪看涨跌家数/最高连板/热门板块；轻仓保盈亏比。</li>
+      <li><b>高位不接力</b>：<b>连板≥4 一律不推荐</b>（4板以上属高位接力，断板/炸板后回落幅度大），候选阶段直接剔除。</li>
     </ul>
     <p style="color:#991b1b"><b>风险提示：</b>以下结果由实时行情与规则自动推演生成，仅供研究参考，<b>不构成任何投资建议</b>。市场有风险，追高/接盘风险需自行控制。</p>
   </div>`;
