@@ -357,24 +357,20 @@ async function fetchKlines(codes, n=12){ // 日K：{d,o,c,h,l,v}，升序(旧→
   });
   return out;
 }
-async function fetchMainFlow(codes){ // 昨日主力净流入(元)：新浪资金流历史；取「今天之前最近一个交易日」的整日净流入
+async function fetchMainFlow(codes){ // 主力净流入(元)：有网关走新浪JSON接口；公网该接口无CORS，改用JSONP版
   const out={};
-  const _today=new Date().toLocaleDateString('sv-SE').replace(/-/g,''); // 本地 YYYYMMDD
   await poolRange(0, Math.max(0,codes.length-1), 6, async(i)=>{
-    const c=codes[i]; const q=`?page=1&num=2&sort=opendate&asc=0&daima=${mt(c)}${c}`;
+    const c=codes[i]; const q=`?page=1&num=1&sort=opendate&asc=0&daima=${mt(c)}${c}`;
     try{
-      let arr=null;
+      let row=null;
       if(HAS_GW){
-        try{const j=await fetchJson(`https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs${q}`,2); if(Array.isArray(j)&&j.length)arr=j;}catch(e){}
+        try{const j=await fetchJson(`https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs${q}`,2); if(Array.isArray(j)&&j.length)row=j[0];}catch(e){}
       }
-      if(!arr){
+      if(!row){
         const j=await jsonpVars(`https://vip.stock.finance.sina.com.cn/quotes_service/api/jsonp_v2.php/var%20%VAR%=/MoneyFlow.ssl_qsfx_zjlrqs${q}`,10000);
-        if(j.length)arr=j;
+        if(j.length)row=j[0];
       }
-      if(!arr||!arr.length)return;
-      // ★盘中该接口可能已含「今日」行（当日累计、9:25 时几乎为0），必须跳过今天，取昨日整日
-      const row=arr.find(r=>String(r.opendate||'').replace(/-/g,'')<_today)||arr[0];
-      if(row&&row.r0_net!=null) out[c]=+row.r0_net; // 昨日主力净流入(元)
+      if(row&&row.r0_net!=null) out[c]=+row.r0_net; // 主力净流入(元)
     }catch(e){}
   });
   return out;
@@ -1131,7 +1127,7 @@ function intraCard(p, rank, km){
       <div class="br"><div class="k">昨日涨停</div><div class="v" style="color:${izt?'var(--orange)':'var(--text)'}">${izt?'是':'否'}</div></div>
       <div class="br"><div class="k">5日动量</div><div class="v" style="color:${ichg5>=10?'var(--orange)':'var(--text)'}">${ichg5!=null?(ichg5>0?'+':'')+ichg5.toFixed(0)+'%':'—'}</div></div>
       <div class="br"><div class="k">换手率</div><div class="v">${fmtW(+p.turnoverratio)}%</div></div>
-      <div class="br"><div class="k">昨日主力净流入</div><div class="v" style="color:${flow>0?'var(--red)':flow<0?'var(--green)':'var(--text)'}">${flow?fmtB(flow)+'亿':'—'}</div></div>
+      <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${flow>0?'var(--red)':flow<0?'var(--green)':'var(--text)'}">${flow?fmtB(flow)+'亿':'—'}</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
     </div>
     <div class="why">${why}<br><span style="color:#991b1b">⚠ T+1选股为"低吸+5日强势"博弈（回测：平开回调池次日期望+0.23% vs 追涨池-1~-6%）；已硬排除昨日涨停/连板股（今日不封板则次日续跌概率大），仅供研究，非投资建议；破位/炸板须立即离场。</span></div>
@@ -1195,12 +1191,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   148日回测（0.40 口径，tushare stk_auction 真实竞价 × 东财日K，无前视；每日取1只首选中）：近50日 16天 封板68.8%、前97日 18天 72.2%，
     //   两窗差仅3.4pt；原 amt≥4000万 为 80.0%/71.4%，差8.6pt＝吃窗口。开→收 +1.66%/+3.65%。
     const vrY=(km&&km.vrY!=null)?km.vrY:(km?km.vr:0);
-    // ★昨日主力净流入门禁（2026-11 新增）：昨日主力净流入 ≤0 的票不具首选资格（可留作备选观察）。
-    //   270日回测（首选101天）：昨日净流入>0 → 82天 封板61.0%、开→收+0.85%、崩16；
-    //   ≤0 → 19天 封板36.8%、开→收-1.28%、崩5。140日窗口：42→39天、81.0%→79.5%（-1.5pt 为噪声，方向一致）。
-    //   无资金流数据时不拦（fail-open），避免接口限流后整天无首选。
-    const flowOK=flows[s.code]==null?true:(+flows[s.code]>0);
-    const hiConf=(flowOK&&openGap<=5.3&&c10!=null&&c10>=35&&amtR>=0.35&&aucAmt>=1500&&vrY>=0.7);
+    const hiConf=(openGap<=5.3&&c10!=null&&c10>=35&&amtR>=0.35&&aucAmt>=1500&&vrY>=0.7);
     // ★标准档（B档，补位首选）：10日涨幅≥15% + 竞价换手率≥0.70% + 竞价额≥1500万 + 昨量比≥0.7 + 流通市值≤80亿。
     //   148日回测（tushare stk_auction 真实竞价 × 东财日K，无前视；每日只取1只首选口径）：
     //   近50日 29天 封板58.6%、开→收+0.34%；前97日 31天 64.5%、+1.89%；全148日 60天 61.7%、+1.14%（覆盖42%）。
@@ -1212,7 +1203,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   开→收 +3.06%→+2.38%、崩盘 4→6；B档自身 23天 封板仅60.9%、开→收+0.38%（12~15% 这档质量明显偏弱）。
     //   → 已回退为 15%（2026-11）：12% 档多 3 天但 B 档封板率从 70.0% 掉到 60.9%、均值 +0.38%，不划算。
     //   再放宽 A档 chg10 35→30 会让封板率跌到 71.4%、崩盘翻倍，故涨幅门槛不动。
-    const stdConf=(flowOK&&openGap<=5.7&&c10!=null&&c10>=15&&amtR>=0.70&&aucAmt>=1500&&fmc>0&&fmc<=80&&vrY>=0.7);
+    const stdConf=(openGap<=5.7&&c10!=null&&c10>=15&&amtR>=0.70&&aucAmt>=1500&&fmc>0&&fmc<=80&&vrY>=0.7);
     const aw=wt('auction'); // 对账闭环可调权重（默认1=本次校准值；经"应用建议权重"写入 localStorage 后生效）
     let sc=0;
     // ★2026-11 回测（高开4~9.5%池 866样本/108日，买点=开盘价，看开→收）：
@@ -1375,7 +1366,7 @@ function auctionCard(p, rank, km){
       <div class="br"><div class="k">竞价成交额</div><div class="v" style="color:${_aucAmt>=1500?'var(--red)':'var(--text)'}">${_aucAmt>0?Math.round(_aucAmt/100)/100+'亿':'—'}</div></div>
       <div class="br"><div class="k">现涨幅</div><div class="v">${pct}%</div></div>
       ${km?`<div class="br"><div class="k">昨量比</div><div class="v" style="color:${_vrY>=0.7?'var(--red)':'var(--text)'}">${fmtW(_vrY)}</div></div>`:''}
-      <div class="br"><div class="k">昨日主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
+      <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
       <div class="br"><div class="k">换手率</div><div class="v" style="color:${_amtR>=0.70?'var(--red)':'var(--text)'}">${fmtW(+p.turnoverratio)}%</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
     </div>
@@ -1421,7 +1412,7 @@ function pickCard(p, rank, isLimit, km){
     if(lbc<=1)parts.push(`<b>模式要点·首板：</b>该股今日<b>首次涨停（首板）</b>，连板接力溢价>首板（回测：连板次日溢价2.61% vs 首板0.69%），故连板强度靠前优先；`);
     else parts.push(`<b>模式要点·接力（连板${lbc}板）：</b>该股已连板${lbc}天，连板高度是市场合力延续信号，后续接力溢价更佳（回测：连板次日溢价2.61% vs 首板0.69%），故优先；`);
     if(p.fund)parts.push(`封单约${fmtW_b(p.fund)}亿，封板较${p.fund>2e8?'坚实':'一般'}（课程03 封单质量）；`);
-    if(p.flow)parts.push(`昨日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'资金进场认同涨停级别':'主力净流出需警惕'}；`);
+    if(p.flow)parts.push(`今日主力净流入${fmtB(p.flow)}亿，${p.flow>0?'资金进场认同涨停级别':'主力净流出需警惕'}；`);
     if(p.hybk)parts.push(`所属<b>${p.hybk}</b>板块出现涨停梯队，板块合力强；`);
     parts.push(`换手${fmtW(+p.hs)}%、流通市值${fmtW_b(p.ltsz)}亿，${(+p.hs||0)>25?'分歧偏大注意承接':'人气较健康'}。`);
   }else{
@@ -1454,7 +1445,7 @@ function pickCard(p, rank, isLimit, km){
       <div class="br"><div class="k">换手率</div><div class="v">${fmtW(+p.turnoverratio)}%</div></div>
       ${km?`<div class="br"><div class="k">量比</div><div class="v">${fmtW(km.vr)}</div></div>`:''}
       ${p._iburst?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--orange)">${p._ipos!=null?'强量·资金强攻':'爆量·防分歧'}</div></div>`:p._imod?`<div class="br"><div class="k">量能</div><div class="v" style="color:var(--red)">${p._ipos!=null?'放量·资金进场':'放量·资金进场'}</div></div>`:''}
-      <div class="br"><div class="k">昨日主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
+      <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
       <div class="br"><div class="k">流通市值</div><div class="v">${fmtW_b(p.ltsz||p.nmc*1e4)}亿</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
     </div>
@@ -1607,7 +1598,7 @@ async function run(){
     if(nf<10){
       src.push('<li><span class="bad">⚠</span> 主力净流入接口当前受限（'+nf+'/'+flowCands.length+'），数值显示“—”，自动刷新将重试</li>');
     }else{
-      src.push('<li><span class="ok">✓</span> 新浪资金流 <b>'+nf+'</b> 只（昨日主力净流入）</li>');
+      src.push('<li><span class="ok">✓</span> 新浪资金流 <b>'+nf+'</b> 只（主力净流入）</li>');
     }
 
     // 4) 选股
@@ -1724,7 +1715,6 @@ function guideText(){
       <li><b>高位不接力</b>：<b>昨日连板≥4 一律剔除</b>（4板以上属高位接力，断板/炸板后回落幅度大），<b>昨日2连板且竞价换手≥1.5%</b> 同样剔除（第三板接力 + 巨量分歧）。首选按昨日连板数分层：lbc=0 封板 66.7%、<b>lbc=1（昨日首板）12只封板 100%</b>、<b>lbc=2 仅 46.7% / 开→收 -1.57%</b>（9只崩盘票里6只在此档）、lbc=3~4 61.5%、lbc≥5 75%。接入后：148日 首选 53→<b>38天</b>、封板 67.9%→<b>81.6%</b>、开→收 +1.87%→+3.59%、崩盘 9→2（前半 73.7%/后半 89.5%）；140日 45→36天、75.6%→<b>83.3%</b>；110日 39→30天、74.4%→<b>83.3%</b>、崩盘 4→1。</li>
       <li><b>首选分两档（封板优先）</b>：<br>① <b>高置信档</b>：10日涨幅≥35% + <b>竞价换手率≥0.35%</b>（竞价额≥1500万兜底）+ 高开≤5.3% + 昨量比≥0.7 → 近140日 <b>22天、封板90.9%</b>、开→收+4.46%。<br>② 无高置信票时退到 <b>标准档</b>：10日涨幅≥15% + <b>竞价换手率≥0.70%</b>（竞价额≥1500万）+ 昨量比≥0.7 + 流通市值≤80亿 → 近140日 20天、封板70.0%、开→收+1.53%。<br>两档合计 近140日 <b>42天</b>、封板<b>81.0%</b>、覆盖30%（原 36天/83.3%）；全148日 44天、79.5%。<br>为什么用换手率：竞价换手率=竞价成交额/流通市值，而绝对金额门槛对各市值系统性偏心（0~30亿仅9.3%能过4000万、90~110亿66.7%能过，而各段中位换手都约0.5%）——等于在筛市值而不是筛资金强度。<br>取舍：2026-11 为增加出票天数，把 高置信档换手 0.40→0.35、标准档 0.80→0.70，换来 <b>+6 天</b>（36→42天）、代价 封板率 -2.3pt（83.3%→81.0%）。曾试过标准档 10日涨幅 15→12%（+3天），但 12~15% 这档封板仅60.9%、均值+0.38%，已回退。两档都不满足时才首选空仓、只给1只备选。</li>
       <li><b>市场环境门禁（9:25 即可判定，无前视）</b>：取<b>上一交易日主板涨停家数 N</b>——N≥70 强势、40≤N&lt;70 中性、<b>N&lt;40 冰点</b>。冰点日即使命中 A/B 档也<b>不出首选</b>，只把最强票列为备选观察（页头显示「环境·冰点」）。<br>270 日回测（2025-09-19~2026-11-11，首选 101 天，整体 封板 56.4%/开→收 +0.45%/<b>崩盘 21 天</b>）：<b>N≥70 → 23天 封板78.3%、开→收+2.78%、崩2</b>；40~69 → 60天 51.7%/+0.26%；<b>N&lt;40 → 18天 44.4%/-0.05%、崩3</b>。指数均线/指数20日涨幅对首选胜率<b>无区分度</b>（指数在MA20上 53.8% 反而低于在下方 59.2%），故不用指数择时，只用涨停家数这种情绪指标。<br>注意：270 日整体只有 56.4%、崩盘占比 20.8%，且前 6 个月（2025-09~2026-03）封板仅 40.0%/-1.74%、后 6 个月 72.5%/+2.60%——<b>策略强依赖市场阶段，弱市段应主动降仓或空仓</b>。</li>
-      <li><b>昨日主力净流入门禁</b>：A/B 档另需<b>昨日主力净流入 &gt; 0</b>（新浪资金流历史，取「今天之前最近一个交易日」的整日 r0_net；接口取不到时不拦，fail-open）。<br>270 日回测：净流入&gt;0 → 82天 封板 <b>61.0%</b>、开→收+0.85%、崩16；≤0 → 19天 封板 <b>36.8%</b>、开→收 <b>-1.28%</b>、崩5。140 日窗口：42→39天、81.0%→79.5%（-1.5pt 属噪声，方向一致）。<br>口径说明：一律用<b>昨日整日</b>净流入，不用当日盘中累计——9:25 时当日累计几乎为0，没有信息量。</li>
     </ul>
     <p style="color:#991b1b"><b>风险提示：</b>以下结果由实时行情与规则自动推演生成，仅供研究参考，<b>不构成任何投资建议</b>。市场有风险，追高/接盘风险需自行控制。</p>
   </div>`;
