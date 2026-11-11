@@ -1182,15 +1182,16 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     // ★高置信首选（A档）：10日涨幅≥35% + 竞价换手率≥0.40% + 高开≤5.3% + 昨量比≥0.7（另设竞价额≥1500万兜底极小市值）。
     //   资金门槛用「竞价换手率」而非绝对金额：绝对4000万对各市值系统性偏心（0~30亿仅9.3%能过、90~110亿66.7%能过，
     //   而各市值段中位换手都约0.5%），等于在筛市值而不是筛资金强度。
-    //   148日回测（tushare stk_auction 真实竞价 × 东财日K，无前视）：近50日 19天 封板73.7%、前97日 20天 75.0%，
-    //   两窗差仅1.3pt；原 amt≥4000万 为 80.0%/71.4%，差8.6pt＝吃窗口。开→收 +2.24%/+3.82%。
+    //   148日回测（tushare stk_auction 真实竞价 × 东财日K，无前视；每日取1只首选中）：近50日 16天 封板68.8%、前97日 18天 72.2%，
+    //   两窗差仅3.4pt；原 amt≥4000万 为 80.0%/71.4%，差8.6pt＝吃窗口。开→收 +1.66%/+3.65%。
     const vrY=(km&&km.vrY!=null)?km.vrY:(km?km.vr:0);
     const hiConf=(openGap<=5.3&&c10!=null&&c10>=35&&amtR>=0.40&&aucAmt>=1500&&vrY>=0.7);
-    // ★标准档（B档，补位首选）：10日涨幅≥15% + 竞价换手率≥0.60% + 竞价额≥1500万 + 流通市值≤80亿。
-    //   回测（A档优先、否则B档）：近50日 32天 封板59.4%、开→收+0.28%；前97日 36天 61.1%、+1.57%。
-    //   对照旧B（amt≥4000万）：近50日 31天 61.3% / 前97日 29天 65.5% —— 换手档天数更多(+1/+7)、封板略降(-1.9/-4.4pt)。
-    //   覆盖到一半以上交易日，首选封板率的结构上限就是 ~60%（基准池仅39%）：70%与50%覆盖不可兼得，此处按天数优先。
-    const stdConf=(openGap<=5.7&&c10!=null&&c10>=15&&amtR>=0.60&&aucAmt>=1500&&fmc>0&&fmc<=80);
+    // ★标准档（B档，补位首选）：10日涨幅≥15% + 竞价换手率≥0.80% + 竞价额≥1500万 + 昨量比≥0.7 + 流通市值≤80亿。
+    //   148日回测（tushare stk_auction 真实竞价 × 东财日K，无前视；每日只取1只首选口径）：
+    //   近50日 29天 封板58.6%、开→收+0.34%；前97日 31天 64.5%、+1.89%；全148日 60天 61.7%、+1.14%（覆盖42%）。
+    //   对照 tr≥0.60（无昨量比）：75天 57.3% / 覆盖52%。提到 0.80+昨量比≥0.7 换来 +4.4pt 封板，
+    //   代价是少15个交易日、覆盖 52%→42%（用户明确选择"封板优先"，放弃"过半交易日有票"）。
+    const stdConf=(openGap<=5.7&&c10!=null&&c10>=15&&amtR>=0.80&&aucAmt>=1500&&fmc>0&&fmc<=80&&vrY>=0.7);
     const aw=wt('auction'); // 对账闭环可调权重（默认1=本次校准值；经"应用建议权重"写入 localStorage 后生效）
     let sc=0;
     // ★2026-11 回测（高开4~9.5%池 866样本/108日，买点=开盘价，看开→收）：
@@ -1264,7 +1265,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
   const _bk=z=>z.ev.sc-(z.ev.vr<1.2?30:0)-(z.ev.amtR>=0.3&&z.ev.amtR<0.7?30:0);
   // ★首选来源：①高置信(A档) 有则取其中综合分最高者；②无A档则退到「标准档」(B档) 最高分者（保证≥一半交易日有票）；
   //   ③两档都没有 → 首选空仓，只把综合分最高的票标「备选」(rank 2)。
-  //   回测（均改用竞价换手率口径）：A档 73.7%(近50日/19天)、75.0%(前97日/20天)；A+B档 59.4%(32天)/61.1%(36天)。
+  //   回测（每日取1只首选口径，竞价换手率）：A档 68.8%(近50日/16天)、72.2%(前97日/18天)；A+B档 58.6%(29天)/64.5%(31天)。
   const _hi=scaled.filter(x=>x.ev.hi);
   const _std=scaled.filter(x=>x.ev.std);
   const _out=[];
@@ -1303,8 +1304,8 @@ function auctionCard(p, rank, km){
   // 高位放量炸板风险标签（仅展示提示，不改决策分——避免违背竞价回测9"量比高封板率更高"）
   const warn=[];
   if(p._noHi)warn.push('<span class="rtag warn">今日无合格首选票·首选空仓，仅作备选</span>');
-  if(_hi)warn.push('<span class="rtag ok">高置信·10日涨幅≥35%+竞价换手≥0.40%+高开≤5.3%+昨量比≥0.7（近50日封板73.7%）</span>');
-  else if(p._std)warn.push('<span class="rtag info">标准档·10日涨幅≥15%+竞价换手≥0.60%+市值≤80亿（近50日封板59.4%）</span>');
+  if(_hi)warn.push('<span class="rtag ok">高置信·10日涨幅≥35%+竞价换手≥0.40%+高开≤5.3%+昨量比≥0.7（近50日封板68.8%）</span>');
+  else if(p._std)warn.push('<span class="rtag info">标准档·10日涨幅≥15%+竞价换手≥0.80%+昨量比≥0.7+市值≤80亿（近50日封板58.6%）</span>');
   if(p._weak)warn.push('<span class="rtag warn">K线数据不足·仅供参考</span>'); // 兜底：本轮上游取K线失败时的裸高开票，指标缺失，仅作参考
   if(ogNum>3&&!isNaN(vr)&&vr>1.5)warn.push('<span class="rtag warn">高开放量·分歧大</span>');
   const retrace=pctNum-ogNum; // 当前涨幅相对竞价高开的回落幅度
@@ -1327,7 +1328,7 @@ function auctionCard(p, rank, km){
       <div class="br"><div class="k">现涨幅</div><div class="v">${pct}%</div></div>
       ${km?`<div class="br"><div class="k">昨量比</div><div class="v" style="color:${_vrY>=0.7?'var(--red)':'var(--text)'}">${fmtW(_vrY)}</div></div>`:''}
       <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
-      <div class="br"><div class="k">换手率</div><div class="v" style="color:${_amtR>=0.60?'var(--red)':'var(--text)'}">${fmtW(+p.turnoverratio)}%</div></div>
+      <div class="br"><div class="k">换手率</div><div class="v" style="color:${_amtR>=0.80?'var(--red)':'var(--text)'}">${fmtW(+p.turnoverratio)}%</div></div>
       ${p.hybk?`<div class="br"><div class="k">板块</div><div class="v">${p.hybk}</div></div>`:''}
     </div>
     <div class="why">${niche}${sealed?'今日已封死涨停，盘中剔除炸板票后的强势确认；':'该股盘中未封板或已从高点回落，属于高风险博弈，追入须谨慎'}配合市场情绪乘数锁定强弱（课程22/31/32 人气·资金）。<br><span style="color:#991b1b">⚠ 竞价/情绪推演仅供研究，非投资建议。</span></div>
@@ -1621,7 +1622,7 @@ async function run(){
     $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map(p=>auctionCard(p,p._rk||1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开3.7%~5.7%、竞价换手率≥0.25%、流通市值≤110亿）')+'</div>';
     // 首选空仓提示：当日无「10日涨幅≥35% + 竞价换手率≥0.40% + 高开≤5.3%」的高置信票时，不拿普通票冒充首选
     if(auctionPicks.length&&!auctionPicks.some(p=>p._rk===1))
-      $('#pAuction').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">今日无合格首选票 · <b>首选空仓</b>；下方仅为备选（首选需满足 高置信档：10日涨幅≥35%+竞价换手率≥0.40%+高开≤5.3%+昨量比≥0.7，或 标准档：10日涨幅≥15%+竞价换手率≥0.60%+市值≤80亿）。</div>');
+      $('#pAuction').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">今日无合格首选票 · <b>首选空仓</b>；下方仅为备选（首选需满足 高置信档：10日涨幅≥35%+竞价换手率≥0.40%+高开≤5.3%+昨量比≥0.7，或 标准档：10日涨幅≥15%+竞价换手率≥0.80%+昨量比≥0.7+市值≤80亿）。</div>');
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的T+1大涨票（需平开/微高开0~3%、未涨停、换手≥1% 且无炸板）</div>';
     $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] T+1选股为"平开低吸+5日强势"（已剔除昨日涨停股），选中的票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶。</div>');
@@ -1665,7 +1666,7 @@ function guideText(){
       <li><b>风控纪律</b>：主板股<b>破10日线离场</b>、情绪看涨跌家数/最高连板/热门板块；轻仓保盈亏比。</li>
       <li><b>高位不接力</b>：<b>连板≥4 一律不推荐</b>（4板以上属高位接力，断板/炸板后回落幅度大），候选阶段直接剔除。</li>
       <li><b>高开不追</b>：<b>竞价高开&gt;5.7% 一律不选</b>（开盘溢价透支、冲高回落概率大），竞价强势模块只做 <b>3.7%~5.7%</b>（3.2%~3.7% 档经近20日验证封板仅14.8%、开→收-0.66%，已下线）；流通市值≤110亿。</li>
-      <li><b>首选分两档（保证≥一半交易日有票）</b>：<br>① <b>高置信档</b>：10日涨幅≥35% + <b>竞价换手率≥0.40%</b>（竞价额≥1500万兜底）+ 高开≤5.3% + 昨量比≥0.7 → 近50日 19天、封板<b>73.7%</b>、开→收+2.24%；之前97日 20天、75.0%、+3.82%（两窗仅差1.3pt）。<br>② 无高置信票时退到 <b>标准档</b>：10日涨幅≥15% + <b>竞价换手率≥0.60%</b>（竞价额≥1500万）+ 流通市值≤80亿 → 两档合计 近50日 <b>32天</b>、封板59.4%、开→收+0.28%；之前97日 36天、61.1%、+1.57%（双向一致）。<br>为什么用换手率：竞价换手率=竞价成交额/流通市值，而绝对金额门槛对各市值系统性偏心（0~30亿仅9.3%能过4000万、90~110亿66.7%能过，而各段中位换手都约0.5%）——等于在筛市值而不是筛资金强度。<br>代价：首选封板率由 73.7% 降到约 59%。基准池首选封板只有 39%，参数网格搜索下"覆盖≥25天"的最优组合最高也只到 ~61% —— 70% 与 50% 覆盖不可兼得，此处按"天数优先"取标准档。两档都不满足时才首选空仓、只给1只备选。</li>
+      <li><b>首选分两档（封板优先）</b>：<br>① <b>高置信档</b>：10日涨幅≥35% + <b>竞价换手率≥0.40%</b>（竞价额≥1500万兜底）+ 高开≤5.3% + 昨量比≥0.7 → 近50日 16天、封板<b>68.8%</b>、开→收+1.66%；之前97日 18天、72.2%、+3.65%。<br>② 无高置信票时退到 <b>标准档</b>：10日涨幅≥15% + <b>竞价换手率≥0.80%</b>（竞价额≥1500万）+ 昨量比≥0.7 + 流通市值≤80亿 → 两档合计 近50日 <b>29天</b>、封板58.6%、开→收+0.34%；之前97日 31天、64.5%、+1.89%；全148日 60天、61.7%、覆盖42%。<br>为什么用换手率：竞价换手率=竞价成交额/流通市值，而绝对金额门槛对各市值系统性偏心（0~30亿仅9.3%能过4000万、90~110亿66.7%能过，而各段中位换手都约0.5%）——等于在筛市值而不是筛资金强度。<br>取舍：标准档由 换手≥0.60%（75天、覆盖52%、封板57.3%）提到 ≥0.80%+昨量比≥0.7（60天、覆盖42%、封板61.7%），换来 +4.4pt 封板率，代价是<b>只有约 4 成交易日有首选票</b>。两档都不满足时才首选空仓、只给1只备选。</li>
     </ul>
     <p style="color:#991b1b"><b>风险提示：</b>以下结果由实时行情与规则自动推演生成，仅供研究参考，<b>不构成任何投资建议</b>。市场有风险，追高/接盘风险需自行控制。</p>
   </div>`;
