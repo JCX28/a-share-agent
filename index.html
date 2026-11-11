@@ -386,6 +386,8 @@ function klineMetrics(kl){
   const vr=last.v/avg5;
   const idx5=Math.max(0,closes.length-6);
   const chg5=(last.c/closes[idx5]-1)*100;
+  // 前10日涨幅：昨收 / 10日前收盘（9:26 可知，无前视）。142日真实竞价回测：chg10≥35% 单因子封板60%（训练58/测试67）
+  const chg10=(kl.length>=13)?((kl[kl.length-2].c/kl[kl.length-12].c-1)*100):null;
   let lbc=0; const lim=n=>n;
   for(let i=kl.length-1;i>0;i--){
     const r=(kl[i].c/kl[i-1].c-1)*100;
@@ -397,7 +399,7 @@ function klineMetrics(kl){
   const _n=new Date(),_hm=_n.getHours()*60+_n.getMinutes();
   const _today=''+_n.getFullYear()+'-'+String(_n.getMonth()+1).padStart(2,'0')+'-'+String(_n.getDate()).padStart(2,'0');
   const intraday=(_hm>=570&&_hm<=690)&&last.d===_today;
-  return {price:last.c, vr, ma5, ma10, chg5, lbc, vol:last.v, yestChg, intraday,
+  return {price:last.c, vr, ma5, ma10, chg5, chg10, lbc, vol:last.v, yestChg, intraday,
     broke5:last.c<ma5, broke10:last.c<ma10};
 }
 /* ★选股两关注（用户口径）：
@@ -1162,6 +1164,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     if(touchedZT&&nowBroken)return false;                                // 盘中炸板未回封 → 剔除
     return true;
   });
+  cands.forEach(s=>{ delete s._rk; delete s._noHi; }); // 每轮重置排序标记，避免上一轮标记残留（stocks 对象复用）
   const score=(s)=>{
     const km=klines[s.code]; const flow=flows[s.code]||0;
     const lim=detectLimitPct(s.name);
@@ -1170,6 +1173,14 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const hot=hotSector.has(s.hybk);
     const amtR=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0); // 竞价换手率(竞价成交额/流通市值，9:26可得)
     const fmc=(+s.nmc||0)/1e4; // 流通市值(亿)；新浪 nmc 单位万元
+    // ★竞价成交额(万元) = 竞价换手率% × 流通市值(亿) × 100（与 tushare stk_auction.amount 实测一致：0.52%×110亿=5720万）
+    const aucAmt=amtR*fmc*100;
+    const c10=(km&&km.chg10!=null)?km.chg10:null;
+    // ★高置信首选（142日真实竞价回测，训练4-8月/测试9-11月双向验证）：
+    //   chg10≥35%（封板60%，训练58/测试67）+ 竞价成交额≥4000万（48%，47/49）→ 两项叠加 封板69%（69/70）；
+    //   再叠加 高开≤5.3% → 出票17/142日，封板71%，开→收+3.53%，胜率88%。
+    //   代价：只在约12%的交易日成立，其余日子首选空仓（只给备选），故"首选封板率"由44%提到71%。
+    const hiConf=(openGap<=5.3&&c10!=null&&c10>=35&&aucAmt>=4000);
     const aw=wt('auction'); // 对账闭环可调权重（默认1=本次校准值；经"应用建议权重"写入 localStorage 后生效）
     let sc=0;
     // ★2026-11 回测（高开4~9.5%池 866样本/108日，买点=开盘价，看开→收）：
@@ -1219,7 +1230,11 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   ★2026-11-11 改用 tushare 真实竞价换手（stk_auction.turnover_rate，口径与线上 9:26 完全一致，流通市值比 1.000）重测 33日/423候选：
     //     0.18~0.22% 档封板 14%/开→收-0.45%（全池最差），0.25~0.32% 档封板 38~75%/+2.2~+3.4%。
     //     门槛 0.20%→0.25%：首选封板 54%→59%、开→收 +0.34%→+0.85%；合计 48%→56%、+0.67%→+1.00%（空仓日 5→6）。
-    return {sc, openGap, vr, amtR, trap:(noVolTrap||openGap<3.7||openGap>5.7||amtR<0.25||(fmc>0&&fmc>110)), weak:(!km&&openGap>2.5&&noKdata)};
+    // ★高置信票绕过「无量陷阱」：chg10≥35% 多为连板/强势接力，昨日量比<1.2 只是前一日缩量整理，
+    //   不等于"今日高开无量"；142日回测中该细分（hiConf 且 昨量比<1.2）仍封板 6/7，硬剔会误杀首选。
+    const trapBase=(openGap<3.7||openGap>5.7||amtR<0.25||(fmc>0&&fmc>110));
+    return {sc, openGap, vr, amtR, hi:hiConf, c10, aucAmt,
+      trap:(trapBase||(!hiConf&&noVolTrap)), weak:(!km&&openGap>2.5&&noKdata)};
   };
   const scaled=cands.map(s=>({s,ev:score(s)})).filter(x=>!x.ev.trap);
   // ★排序改为「综合分」降序（原为竞价换手率单一排序键：sc 只在 amtR 相等时生效，等于把"竞价换手最猛"直接当第一名）。
@@ -1236,30 +1251,46 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
   //   ★换手死区：30日全池100只候选，竞价换手 0.35~0.45% 封板19%/开→收-1.92%，0.45~0.60% 封板29%/-1.98%；
   //     而 0.22~0.28% 封板79%/+3.83%、≥0.90% 封板69%/+1.86% → "半吊子资金"档最差，备选里扣30分让位。
   //     30日备选：封板52%→57%、开→收+1.77%→+2.32%、胜率70%→74%（15/20日不受影响，仅老样本换票）。
-  if(scaled.length>1){
-    const _bk=z=>z.ev.sc-(z.ev.vr<1.2?30:0)-(z.ev.amtR>=0.3&&z.ev.amtR<0.7?30:0);
-    const _head=scaled[0];
-    const _rest=scaled.slice(1).sort((a,b)=>{
-      if(a.ev.weak!==b.ev.weak)return a.ev.weak?1:-1;
-      return (_bk(b)-_bk(a))||(b.ev.amtR-a.ev.amtR);
-    });
-    scaled.length=0; scaled.push(_head,..._rest);
+  const _bk=z=>z.ev.sc-(z.ev.vr<1.2?30:0)-(z.ev.amtR>=0.3&&z.ev.amtR<0.7?30:0);
+  // ★首选只在「高置信(hi)」票中产生：chg10≥35% + 竞价成交额≥4000万 + 高开≤5.3%（142日回测封板71%）。
+  //   若当日没有任何高置信票 → 首选空仓，只把综合分最高的票标为「备选」(rank 2)，
+  //   不用普通票(封板约44%)冒充首选，从而把「首选封板率」稳在70%一档。
+  const _hi=scaled.filter(x=>x.ev.hi);
+  const _out=[];
+  if(_hi.length){
+    const head=_hi[0]; head.s._rk=1; _out.push(head);
+    if(n>1){
+      const rest=scaled.filter(x=>x!==head).sort((a,b)=>{
+        if(a.ev.weak!==b.ev.weak)return a.ev.weak?1:-1;
+        return (_bk(b)-_bk(a))||(b.ev.amtR-a.ev.amtR);
+      });
+      if(rest.length){ rest[0].s._rk=2; _out.push(rest[0]); }
+    }
+  }else if(scaled.length){
+    scaled[0].s._rk=2; scaled[0].s._noHi=true; _out.push(scaled[0]);
   }
-  return scaled.slice(0,Math.min(n,cands.length)).map(x=>{
+  return _out.map(x=>{
     if(x.ev.weak)x.s._weak=true; // 标记：本轮K线缺失时的兜底裸高开票，供卡片提示"数据不足·仅供参考"
     return x.s;
   });
 }
 function auctionCard(p, rank, km){
+  rank=p._rk||rank; // 首选=1 仅高置信票；无高置信时今日首选空仓，最高分票以 rank=2「备选」呈现
   const pct=p.changepercent.toFixed(2);
   const up=p.changepercent>=0;
   const ogNum=(+p.open&&+p.settlement)?((+p.open/+p.settlement-1)*100):0;
   const openGap=ogNum.toFixed(1);
   const vr=km?km.vr:NaN;
+  const _amtR=(+p.turnoverratio||0)||((+p.amount&&+p.nmc)?(+p.amount/(p.nmc*1e4)*100):0);
+  const _aucAmt=_amtR*((+p.nmc||0)/1e4)*100;      // 竞价成交额(万元)
+  const _c10=(km&&km.chg10!=null)?km.chg10:null;   // 前10日涨幅(昨收/10日前收盘，9:26可知)
+  const _hi=(ogNum<=5.3&&_c10!=null&&_c10>=35&&_aucAmt>=4000);
   const name=p.name.replace('N','N·').replace('C','C·');
   const pctNum=+p.changepercent||0;
   // 高位放量炸板风险标签（仅展示提示，不改决策分——避免违背竞价回测9"量比高封板率更高"）
   const warn=[];
+  if(p._noHi)warn.push('<span class="rtag warn">今日无高置信票·首选空仓，仅作备选</span>');
+  if(_hi)warn.push('<span class="rtag ok">高置信·10日强势+竞价4000万+高开≤5.3%（142日回测封板71%）</span>');
   if(p._weak)warn.push('<span class="rtag warn">K线数据不足·仅供参考</span>'); // 兜底：本轮上游取K线失败时的裸高开票，指标缺失，仅作参考
   if(ogNum>3&&!isNaN(vr)&&vr>1.5)warn.push('<span class="rtag warn">高开放量·分歧大</span>');
   const retrace=pctNum-ogNum; // 当前涨幅相对竞价高开的回落幅度
@@ -1277,6 +1308,8 @@ function auctionCard(p, rank, km){
     ${focusRow(p)}
     <div class="bestrows">
       <div class="br"><div class="k">竞价高开</div><div class="v">${openGap}%</div></div>
+      <div class="br"><div class="k">10日涨幅</div><div class="v" style="color:${_c10!=null&&_c10>=35?'var(--red)':'var(--text)'}">${_c10!=null?fmtW(_c10)+'%':'—'}</div></div>
+      <div class="br"><div class="k">竞价成交额</div><div class="v" style="color:${_aucAmt>=4000?'var(--red)':'var(--text)'}">${_aucAmt>0?Math.round(_aucAmt/100)/100+'亿':'—'}</div></div>
       <div class="br"><div class="k">现涨幅</div><div class="v">${pct}%</div></div>
       ${km?`<div class="br"><div class="k">量比</div><div class="v">${fmtW(vr)}</div></div>`:''}
       <div class="br"><div class="k">主力净流入</div><div class="v" style="color:${p.flow>0?'var(--red)':p.flow<0?'var(--green)':'var(--text)'}">${p.flow?fmtB(p.flow)+'亿':'—'}</div></div>
@@ -1571,7 +1604,10 @@ async function run(){
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
     $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无符合条件的票（需选股时涨幅0.5%~7%、高开≤5.7%且未涨停、分时位置≥20%、现价不低于均价）')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
-    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map((p,i)=>auctionCard(p,i+1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开3.7%~5.7%、竞价换手率≥0.25%、流通市值≤110亿，按 高开甜点+竞价资金+动量+量能 综合分推2只）')+'</div>';
+    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map(p=>auctionCard(p,p._rk||1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'暂无符合条件的竞价票（需高开3.7%~5.7%、竞价换手率≥0.25%、流通市值≤110亿）')+'</div>';
+    // 首选空仓提示：当日无「10日涨幅≥35% + 竞价成交额≥4000万 + 高开≤5.3%」的高置信票时，不拿普通票冒充首选
+    if(auctionPicks.length&&!auctionPicks.some(p=>p._rk===1))
+      $('#pAuction').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">今日无高置信票 · <b>首选空仓</b>；下方仅为备选（普通票首选封板约44%，故不占首选位）。</div>');
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的T+1大涨票（需平开/微高开0~3%、未涨停、换手≥1% 且无炸板）</div>';
     $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] T+1选股为"平开低吸+5日强势"（已剔除昨日涨停股），选中的票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶。</div>');
@@ -1605,7 +1641,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（选股时刻→收盘仍有望大涨，非涨停）+ <b>2只竞价强势</b>（第2只备用） + <b>${$('#nIntra').value||2}只T+1选股大涨</b>（平开低吸+5日强势，剔除昨日涨停）。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（选股时刻→收盘仍有望大涨，非涨停）+ <b>竞价强势</b>（首选=高置信票，无高置信票则首选空仓、只给1只备选） + <b>${$('#nIntra').value||2}只T+1选股大涨</b>（平开低吸+5日强势，剔除昨日涨停）。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
@@ -1615,6 +1651,7 @@ function guideText(){
       <li><b>风控纪律</b>：主板股<b>破10日线离场</b>、情绪看涨跌家数/最高连板/热门板块；轻仓保盈亏比。</li>
       <li><b>高位不接力</b>：<b>连板≥4 一律不推荐</b>（4板以上属高位接力，断板/炸板后回落幅度大），候选阶段直接剔除。</li>
       <li><b>高开不追</b>：<b>竞价高开&gt;5.7% 一律不选</b>（开盘溢价透支、冲高回落概率大），竞价强势模块只做 <b>3.7%~5.7%</b>（3.2%~3.7% 档经近20日验证封板仅14.8%、开→收-0.66%，已下线）；流通市值≤110亿。</li>
+      <li><b>首选只认高置信</b>：首选（第1只）必须同时满足 <b>10日涨幅≥35%</b>（142日真实竞价回测：单因子封板60%，训练58%/测试67%）+ <b>竞价成交额≥4000万</b>（48%，训练47/测试49）+ <b>竞价高开≤5.3%</b> → 三条件叠加出票 17/142 日（约12%）、<b>封板71%</b>、开→收+3.53%、胜率88%（训练/测试双向一致）。<br>不满足时<b>首选空仓</b>，只给1只「备选」——历史上普通票当首选封板仅约44%，宁可空仓也不稀释首选命中率。代价：多数交易日无首选。</li>
     </ul>
     <p style="color:#991b1b"><b>风险提示：</b>以下结果由实时行情与规则自动推演生成，仅供研究参考，<b>不构成任何投资建议</b>。市场有风险，追高/接盘风险需自行控制。</p>
   </div>`;
