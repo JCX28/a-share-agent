@@ -1150,6 +1150,11 @@ async function run(){
     intraShort=intraShort.filter(s=>!_hot4(s.code));
     const _cut4=_cntBefore-(trendShort.length+auctionCands.length+intraShort.length);
     src.push('<li><span class="ok">✓</span> 连板≥4 剔除 <b>'+_cut4+'</b> 只（仅大涨/T+1组；竞价组按分档条件处理）</li>');
+    // ★2026-11-12 昨日收盘跌>0.7% 一概剔除（仅当日大涨组；昨收下跌的票今日平开多为反抽，兑现盘压制）
+    const _cntY=trendShort.length;
+    trendShort=trendShort.filter(s=>{const m=klines[s.code]; return !(m&&m.yestChg!=null&&m.yestChg<-0.7);});
+    const _cutY=_cntY-trendShort.length;
+    if(_cutY>0)src.push('<li><span class="ok">✓</span> 昨日跌&gt;0.7% 剔除 <b>'+_cutY+'</b> 只（仅当日大涨组）</li>');
 
     // 3.5) 主力净流入（新浪资金流·仅取高分候选，降低请求量防限流）
     setStatus('正在拉取主力资金流…','');
