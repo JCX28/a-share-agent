@@ -23,6 +23,9 @@
   .hbtn:hover{background:var(--soft);border-color:#d5d8de}
   .run{background:var(--red);color:#fff;border-color:var(--red);font-weight:600}
   .run:hover{background:#b42318;border-color:#b42318}
+  /* 记录选股：5 分钟内重复（同一时间点）不可记录 → 置灰 */
+  .hbtn.run.gray{background:#98a2b3;border-color:#98a2b3;color:#fff;cursor:not-allowed}
+  .hbtn.run.gray:hover{background:#98a2b3;border-color:#98a2b3}
   #app{display:grid;grid-template-columns:300px 1fr;gap:14px;padding:16px 20px 28px;max-width:1280px;margin:0 auto;align-items:start}
   @media(max-width:980px){#app{grid-template-columns:1fr}}
   .col{display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -92,7 +95,6 @@
   <button class="hbtn run" id="btnRun">执行实时选股</button>
   <button class="hbtn" id="btnHelp">策略依据</button>
   <button class="hbtn" id="btnSnap">对账闭环</button>
-  <button class="hbtn" id="btnPickLog">记录选股</button>
 </header>
 
 <div id="app">
@@ -108,6 +110,7 @@
           <option value="3" selected>3</option><option value="5">5</option>
         </select></div>
       <button class="hbtn run" id="btnRun2" style="width:100%;margin-top:8px">执行实时选股</button>
+      <button class="hbtn run" id="btnPickLog" style="width:100%;margin-top:8px">记录选股</button>
       <div class="status" id="status">就绪。</div>
       <div class="bar" id="bar" style="display:none"><i></i></div>
     </div>
@@ -150,7 +153,7 @@
       <h3 style="margin:0">选股记录 · 手动留痕</h3>
       <span class="mon-tag" id="pickLogTag">0 条</span>
     </div>
-    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">每次点右上角「记录选股」存一条（同一记录间隔需 ≥5 分钟，5 分钟内重复点击不记录），触发方式记为手动执行，最多保留最近 60 条；「开」=开盘涨幅，「选」=选股时涨幅。</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">每次点左侧「参数设置」里的「记录选股」存一条（同一记录间隔需 ≥5 分钟，处于该窗口时按钮变灰不可记），触发方式记为手动执行，最多保留最近 60 条；「开」=开盘涨幅，「选」=选股时涨幅。</div>
     <div id="pickLogList" style="max-height:420px;overflow:auto"></div>
   </div>
   <div class="card"><div id="snapList"><div class="empty">加载中…</div></div></div>
@@ -1346,6 +1349,15 @@ function manualSnap(){
   setStatus('已记录 '+snap.t+'（5 分钟内不重复记录）','ok');
   renderSnaps();
 }
+/* 记录选股按钮状态：可记录=红色；处于 5 分钟去重窗口（同一记录时间）=灰色且不可点 */
+function updatePickLogBtn(){
+  const b=$('#btnPickLog'); if(!b)return;
+  const last=(loadPickLog()[0]||{}).ts||0;
+  const left=last?(PLOG_GAP-(Date.now()-last)):0;
+  if(left>0){b.classList.add('gray'); b.textContent='记录选股（'+Math.ceil(left/1000)+'s 后可记）';}
+  else{b.classList.remove('gray'); b.textContent='记录选股';}
+}
+setInterval(updatePickLogBtn,1000);
 /* ================== 闭环雏形：快照→次日收益对账→自动调参 ==================
    数据流：snapRecord() 存档时补记推荐价 p 与无前视因子 f(高开og/量比vr/5日动量chg5/昨涨停yestZt)
    → reconcileReturns() 取该股决策交易日(bar.date>=快照日的首个bar)的开/收 → 算 日内(收/开-1) 与 隔夜+日内(收/推荐价-1)
@@ -1471,6 +1483,7 @@ function renderPickLog(){
   const el=$('#pickLogList'); if(!el)return;
   const logs=loadPickLog();
   const tag=$('#pickLogTag'); if(tag)tag.textContent=logs.length+' 条';
+  updatePickLogBtn();
   const num=(v)=>(v>0?'+':'')+v.toFixed(2)+'%';
   const chip=(x)=>{
     const og=(x.f&&isFinite(x.f.og))?x.f.og:null;
@@ -1486,7 +1499,7 @@ function renderPickLog(){
     const lis=(items&&items.length)?items.map(chip).join(''):'<span style="font-size:11px;color:#c0c4cc">空</span>';
     return '<div style="margin:3px 0"><div style="font-size:11px;color:var(--muted)">'+title+'（'+n+'）</div>'+lis+'</div>';
   };
-  if(!logs.length){el.innerHTML='<div class="empty">暂无记录。点右上角「记录选股」，把当前选股结果存为一条。</div>';return;}
+  if(!logs.length){el.innerHTML='<div class="empty">暂无记录。点左侧「参数设置」里的「记录选股」，把当前选股结果存为一条。</div>';return;}
   el.innerHTML=logs.slice(0,20).map(rec=>{const ds=String(rec.date).replace(/(\d{4})(\d{2})(\d{2})/,'$1-$2-$3');return '<div style="border-top:1px solid #f0f1f4;padding:7px 0">'
       +'<div style="display:flex;justify-content:space-between;font-size:11.5px"><b>'+ds+' '+rec.t+'</b>'
       +'<span style="color:var(--muted)">'+rec.src+'</span></div>'
