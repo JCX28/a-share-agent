@@ -404,6 +404,12 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
     if(touchedZT&&nowBroken)return false;                                // 盘中炸板未回封 → 剔除
     return true;
   });
+  // ★2026-11-14 9:26~9:34 走「竞价口径」：此时分时字段不存在（pos 恒为 1、现价/均价恒为 1），综合评分会退化为纯高开/市值排序；
+  //   429日回测：高开 0.5~1.5% + 竞价换手≥0.15% + 按竞价额降序 **固定取 1 只** → 日均 +1.05%、t=4.29、
+  //   前半 +0.86/后半 +1.25、2025 +0.82/2026 +1.31、剔除最好10日仍 +0.85% → 该时段直接按资金体量（竞价额）排序。
+  if(sessMinsNow()<5){
+    return cands.slice().sort((a,b)=>(+b.amount||0)-(+a.amount||0)).slice(0,1);
+  }
   // 分时位置 / 现价vs均价（盘中实时字段，无前视）
   const dayPos=(s)=>{const hi=+s.high,lo=+s.low,pr=+s.trade; if(!(hi>lo)||!pr)return null; return (pr-lo)/(hi-lo);};
   const vwapR=(s)=>{const amt=+s.amount,vol=+s.volume,pr=+s.trade; if(!(amt&&vol&&pr))return null;
@@ -477,7 +483,9 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
           :(og>=0&&og<1?4:og<0?-3:og>=2?-2:0))*gw('gap');
     }
     // 5日动量（截至昨收）：A/B 5~25% 最优，>40% 降权；C 该因子为负（5日5-15% -0.32~-0.86%）→ 不参与
-    if(km&&km.chg5!=null&&bkt!=='C')sc+=(km.chg5>40?-4:km.chg5>25?2:km.chg5>=5?6:km.chg5>=0?2:-6)*gw('mom');
+    // ★2026-11-14 删除「5~25% +6 分」：429日回测该区间日均 -0.12~-0.23%（5~10% t=-1.87、10~20% -0.19%），
+    //   只有 ≥30% 才转正（30~40% +0.41%、>40% +1.13%/t=3.70），故 5~25% 归零、不再奖励。
+    if(km&&km.chg5!=null&&bkt!=='C')sc+=(km.chg5>40?-4:km.chg5>25?2:km.chg5>=5?0:km.chg5>=0?2:-6)*gw('mom');
     // ★2026-11-12 新增「5日强+平开低吸」：5日动量≥20% + 竞价平开 0.4~1.0% + 竞价价未破前20日高
     //   实证（近70交易日、含线上初选top40口径、竞价价→收盘）：命中 39 例 单笔 +2.57%、胜率 62%、≥+2% 46%
     //   （英力特 11-11 +9.31%、11-10 引力传媒 +9.37%、海洋王 +9.08%、会稽山 +9.07%）；每日前2整体
@@ -487,9 +495,14 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
       const _ogL=(op/stl-1)*100;
       if(_ogL>=0.4&&_ogL<=1.0&&op<km.hi20)sc+=10*gw('lowbuy');
     }
-    if(km&&km.ma5!=null&&km.ma10!=null)sc+=(km.ma5>km.ma10?4:-2);
-    // 流通市值：40~80亿弹性最优，>150亿重罚
-    sc+=(fmc<=40?5:fmc<=80?6:fmc<=110?3:fmc<=150?0:-8)*gw('nmc');
+    // ★2026-11-14 新增两处扣分（429日回测）：
+    //   ①竞价价已破前20日高（≥+2%，即跳空过高）：日均 -0.44%、t=-4.19（最强负因子）
+    //   ②昨日收在当日振幅最高（posy≥0.9）：日均 -0.13%、t=-1.90（兑现盘压制）
+    if(km&&km.hi20&&op>0&&op>=km.hi20*1.02)sc-=8;
+    if(km&&km.posy!=null&&km.posy>=0.9)sc-=4;
+    // ★2026-11-14 删除「ma5>ma10 +4/-2」：429日回测 ma5>ma10 组日均 -0.03%、ma5<=ma10 组 +0.12%，无边际（原+4方向亦不成立）。
+    // 流通市值：40~80亿弹性最优（★2026-11-14 删除 >150亿 的 -8：回测 >150亿 组日均 +0.11% 为最好，<30亿 -0.31%/t=-4.77 才最差）
+    sc+=(fmc<=40?5:fmc<=80?6:fmc<=110?3:0)*gw('nmc');
     // 换手人气：4%~20% 加4，过冷减分
     sc+=(hs>=4&&hs<20?4:hs>=20?1:hs<1.5?-2:0)*gw('turnover');
     sc+=Math.log10(amount+1)/12.5*3*gw('amount');       // 成交额（弱化，防大票霸榜）
@@ -864,10 +877,35 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     }
     if(_alt){ _alt.s._rk=2; _alt.s._noHi=true; _out.push(_alt); }
   }
-  return _out.map(x=>{
+  // ★2026-11-14 弱信号共振跳过（回测341日验证后上线）：当日推荐票同时命中 6 条"弱信号"中的 ≥5 条 → 当日空仓，不出票。
+  //   6 条弱信号：①lbc=1（昨日仅首板）②chg10∈[30,45)（涨幅将进尾部）③posy≥0.85（昨收在振幅上沿，透支）
+  //              ④fmc∈[30,50)亿（流通盘最拥挤区间）⑤vr∈[1.0,1.8)（量能不上不下）⑥og∈[3.7,5.0)（高开甜点区中位）
+  //   回测（2025-09~2026-11，431个交易日、基线341日）：剔除22天 → 319日(74.0%) 封板58.0% 日均+1.41% 累计+448.5%
+  //   （基线 341日 封56.3% 日均+1.20% 累计+408.1%），前后半段同步改善、配对 t=1.37。
+  //   注意：这是"整日跳过"而非"顺延到下一只"——被剔除的22天全部 posy=1.00，属窄组合格子，需持续观察其稳定性。
+  const _mp=_out[0];
+  if(_mp){
+    const _km=klines[_mp.s.code]||{};
+    const _og=_mp.ev.openGap;
+    const _fmc=(+_mp.s.nmc||0)/1e4;
+    const _lbc=(_km.lbc!=null?_km.lbc:null);
+    const _c10=(_km.chg10!=null?_km.chg10:null);
+    const _posy=(_km.posy!=null?_km.posy:null);
+    const _vrY=(_km.vrY!=null?_km.vrY:_km.vr);
+    let _wk=0;
+    if(_lbc===1)_wk++;
+    if(_c10!=null&&_c10>=30&&_c10<45)_wk++;
+    if(_posy!=null&&_posy>=0.85)_wk++;
+    if(_fmc>=30&&_fmc<50)_wk++;
+    if(_vrY!=null&&_vrY>=1.0&&_vrY<1.8)_wk++;
+    if(_og>=3.7&&_og<5.0)_wk++;
+    if(_wk>=5){ const _e=[]; _e._weakSkip=true; _e._weakN=_wk; return _e; }
+  }
+  const _res=_out.map(x=>{
     if(x.ev.weak)x.s._weak=true; // 标记：本轮K线缺失时的兜底裸高开票，供卡片提示"数据不足·仅供参考"
     return x.s;
   });
+  return _res;
 }
 function auctionCard(p, rank, km){
   rank=p._rk||rank; // 首选=1（四档任一命中）；备选=2（仅首选空仓日出现：L1 → 缩量二板 → b1/b2 → A → C → D → H1/H2/H3 十层依次命中）
@@ -1061,7 +1099,14 @@ async function run(){
       const chg=+s.changepercent||0;
       const hi=+s.high||0, lo=+s.low||0, pr=+s.trade||0, stl=+s.settlement||0;
       const og=(+s.open&&stl)?((+s.open/stl-1)*100):0;
-      if(og>5.7)return false;                                    // 高开>5.7%不选（开盘溢价透支，冲高回落概率大）
+      // ★2026-11-14 高开上限 5.7%→1.5%：429日/20.3万行竞价回测，og≥3% 是稳定亏钱区
+      //   （og 4~5% 日均 -0.58%/t=-5.85、5~5.7% -0.63%/t=-4.47，且 og 越大"当日大涨"命中率越高但收益越负=开盘已透支）；
+      //   收紧到 1.5% 后（配竞价换手≥0.15% + 竞价额降序取1只）日均 +1.05%、t=4.29、剔最好10日仍 +0.85%
+      if(og>1.5)return false;
+      // ★2026-11-14 两道竞价硬门槛（同池 429日）：竞价额<300万 日均 -0.15%/t=-2.74；竞价换手 0.15~0.25% 最优 +0.16%
+      const _hs9=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
+      if((+s.amount||0)<5e6)return false;                        // 竞价额 ≥500万
+      if(_hs9<0.15)return false;                                 // 竞价换手 ≥0.15%
       if(!(chg>=0.5&&chg<=7))return false;                       // 已涨 0.5%~7%（留出到收盘的空间）
       if(chg>=l*0.93)return false;                               // 接近/触及涨停不选
       if(hi&&stl&&(hi/stl-1)*100>=l*0.95-0.01)return false;      // 盘中曾触及涨停（炸板/一字）不选
@@ -1231,7 +1276,7 @@ async function run(){
     $('#cTrend').textContent=trendPicks.length+' / '+nTrendE;
     $('#pTrend').innerHTML=trendPicks.length?trendPicks.map((p,i)=>pickCard(p,i+1,false,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只（暂无符合条件）':'暂无符合条件的票（需选股时涨幅0.5%~7%、高开≤5.7%且未涨停、分时位置≥20%、现价不低于均价）')+'</div>';
     $('#cAuction').textContent=auctionPicks.length+' / '+nAucE;
-    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map(p=>auctionCard(p,p._rk||1,klines[p.code])).join(''):'<div class="empty">'+(sentiment<0.3?'情绪极弱·仅保留最强1只':'今日<b>空仓</b>：首选四档与备选十层均未命中（入池前提：高开2.4%~7.7%、竞价换手≥0.25%、流通市值≤110亿）')+'</div>';
+    $('#pAuction').innerHTML=auctionPicks.length?auctionPicks.map(p=>auctionCard(p,p._rk||1,klines[p.code])).join(''):'<div class="empty">'+(auctionPicks._weakSkip?'今日<b>空仓·弱信号共振</b>：本已选出 1 只，但命中 6 条弱信号中的 '+auctionPicks._weakN+' 条（昨日首板 / 10日涨幅30~45% / 昨收在振幅上沿≥85% / 流通30~50亿 / 昨量比1.0~1.8 / 高开3.7~5.0%），按回测规则整日跳过':(sentiment<0.3?'情绪极弱·仅保留最强1只':'今日<b>空仓</b>：首选四档与备选十层均未命中（入池前提：高开2.4%~7.7%、竞价换手≥0.25%、流通市值≤110亿）'))+'</div>';
     // 首选空仓提示：首选四档任一命中即出首选；备选仅空仓日按十层补（L1 → 缩量二板 → b1/b2 → A → C → D → H1/H2/H3 高开承接），皆不中则不出备选
     if(auctionPicks.length&&!auctionPicks.some(p=>p._rk===1))
       $('#pAuction').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">今日无合格首选票 · <b>首选空仓</b>；下方为<b>备选</b>（近200日：备选74天 封板60.8%、合计139天 67.6%）。首选需满足以下任一档：<b>①首板档</b> 昨日首板 + 10日涨幅15%~45% + 竞价换手≥0.70% + 竞价额≥1500万 + 市值≤80亿；<b>②二连板档</b> 昨日2连板 + 高开4.3%~5.7% + 竞价换手≥1.2% + 市值40~80亿；<b>③高位连板档</b> 昨日≥3连板 + 竞价换手≥0.70% + 竞价额≥3000万；<b>④高置信档</b> 10日涨幅35%~45% + 竞价换手≥0.35% + 高开≤5.3% + 昨量比≥0.7。备选仅首选空仓日出现，按以下十层依次取（命中即出，同层取综合分最高者）：<b>①L1温和高开承接</b> 竞价涨幅2.4%~3.7%+竞价换手≥1.0%+竞价额≥2000万+开盘贴60日高点≥-3%+市值≤110亿（近200日 35天 60.0%）；<b>②缩量二板档 SW</b> 昨日2连板+昨日量比&lt;1.0（缩量涨停）+高开4.3%~5.7%+竞价换手≥1.0%+竞价额≥2000万+市值40~80亿（近200日 11样本 90.9%）；<b>③量比爆发档 b1</b> 昨日非连板+10日涨幅0~30%+高开3.7%~5.7%+竞价换手≥0.35%+量比≥2.0+竞价额≥1500万（31天 64.5%）；<b>④未涨停补涨档 b2</b> 昨日未涨停+10日涨幅10%~45%+高开4.0%~5.7%+竞价换手≥0.35%+量比≥1.0+竞价额≥1000万+市值≤80亿（19天 57.9%）；<b>⑤A高开有板档</b> 昨日1~2连板+高开4.5%~5.7%+竞价换手≥0.25%+竞价额≥1000万（追补27天 59.3%）；<b>⑥C大额低位档</b> 昨日非连板+10日涨幅≤30%+高开4.0%~5.7%+竞价换手≥0.25%+竞价额≥3000万（追补10天 40.0%）；<b>⑦D二板量比档</b> 昨日二连板+10日涨幅≤30%+高开3.7%~5.7%+竞价换手≥0.25%+量比≥1.5+竞价额≥1000万（追补4天 50.0%）；<b>⑧H1 高开承接</b> 竞价涨幅5.7%~6.3%+竞价换手≥1.5%+市值≤110亿（近200日 14天 92.9%）；<b>⑨H2</b> 5.7%~7.2%+竞价换手≥1.5%+昨日收盘在当日振幅上沿≥90%（追补9天 77.8%）；<b>⑩H3</b> 6.9%~7.7%+竞价额≥5000万+开盘仍低于20日高点≥3%（追补16天 81.2%）。（另：高开2.4%~7.7%、竞价换手≥0.25%、市值≤110亿为入池前提；3.7%~5.7% 高开≥5.1% 时需 开盘价≤前20日最高价×1.034）</div>');
