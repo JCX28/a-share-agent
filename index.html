@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 14:33</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 14:40</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-17 14:33</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-17 14:40</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -1431,7 +1431,7 @@ async function run(){
     let intraPicks=buildIntraPicks(intraShort, klines, flows, nIntraE);
     // ★盘中冻结：buildIntraPicks是实时版块，auto-refresh每次都会换成"当前涨最高"的票=逐日内顶。
     //   选中后N分钟(COOL)内不换新票——仅当老票破位/涨停/炸板(离开intraShort候选池)才补新票，并标记"新选/延续/换新"。
-    const COOL=10*60000; let _iMark='新选';
+    const COOL=3*60000; let _iMark='新选';
     if(Date.now()-__intraLock.ts<COOL){
       const keep=__intraLock.codes.map(c=>intraShort.find(x=>x.code===c)).filter(Boolean); // 老票仍在候选池才保留
       const merged=keep.slice();
@@ -1471,7 +1471,7 @@ async function run(){
     if(_fbLive)$('#pFirst').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">当前不是 9:26 竞价时点，且本地没有当日锁定的首板候选池 → 下方名单按<b>盘中累计换手/成交额</b>重算，仅供回看，不等于 9:26 的候选。</div>');
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的T+1大涨票（需平开/微高开0~3%、未涨停、换手≥1% 且无炸板）</div>';
-    $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] T+1选股为"平开低吸+5日强势"（已剔除昨日涨停股），选中的票冷却冻结10分钟，避免随刷新追换到"当前涨最高"的日内顶。</div>');
+    $('#pIntra').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">['+_iMark+'] T+1选股为"平开低吸+5日强势"（已剔除昨日涨停股），选中的票冷却冻结3分钟，避免随刷新追换到"当前涨最高"的日内顶。</div>');
     // 时间守卫：竞价·强势是9:26竞价时点选股；已过竞价窗口后，盘中重算的竞价结果仅作参考。
     //   当日大涨已改为「选股时刻→收盘」口径，盘中任意时刻有效，不再提示勿追高。
     const _n2=new Date(),_hm2=_n2.getHours()*60+_n2.getMinutes(),_wk2=_n2.getDay();
