@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 14:40</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 15:52</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-17 14:40</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-17 15:52</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -134,8 +134,9 @@
   <div class="col">
     <div class="card" id="loading"><div>正在拉取实时行情、计算指标、执行选股…</div><div class="bar" style="margin-top:8px"><i></i></div></div>
     <div class="group" id="gAuction">
-      <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
+      <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 1</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
+      <div class="note">9:26 只出 1 只，不再出备选。<b>按个股</b>：首选四档单票封板率约 54%（同口径重算 245 只）；「65天/75.4%」是<b>按天</b>口径——当天至少一只封板，不等于单票概率。9:35 前不下单。</div>
     </div>
     <div class="group" id="gFirst">
       <div class="ghead"><span class="t-orange">今日首板 · 9:26 候选 → 9:35 确认</span><span class="tagc orange" id="cFirst">0 / 3</span></div>
@@ -1413,7 +1414,7 @@ async function run(){
       :'防守：情绪偏弱，仅最强1只、轻仓试错';
     const _gateMsg=sentiment<0.3?'门禁·情绪极弱·仅推最强1只':'';
     const _sentiN=(base)=>sentiment<0.3?Math.min(1,base):base; // <0.3 冰点收缩到1只；≥0.3 按用户设定
-    const nTrendE=_sentiN(nTrend), nAucE=_sentiN(2), nIntraE=_sentiN(nIntra);
+    const nTrendE=_sentiN(nTrend), nAucE=_sentiN(1), nIntraE=_sentiN(nIntra);
     const _stTag=$('#sentiTrend');
     if(_stTag){
       _stTag.style.display='';
