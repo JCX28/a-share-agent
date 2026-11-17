@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-14 16:19</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 10:31</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -90,7 +90,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-14 16:19</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-17 10:31</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -409,7 +409,13 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
   //   429日回测：高开 0.5~1.5% + 竞价换手≥0.15% + 按竞价额降序 **固定取 1 只** → 日均 +1.05%、t=4.29、
   //   前半 +0.86/后半 +1.25、2025 +0.82/2026 +1.31、剔除最好10日仍 +0.85% → 该时段直接按资金体量（竞价额）排序。
   if(sessMinsNow()<5){
-    return cands.slice().sort((a,b)=>(+b.amount||0)-(+a.amount||0)).slice(0,1);
+    // ★2026-11-17 剔除「儒意形态」：昨首板 + 昨日量比≥2 + 流通市值≥100亿 + 竞价换手<0.4%
+    //   395日回测该形态 91 样本：收>1.7% 36.3%（同池 42.5%）、胜率 40.7%（46.6%）、次日红 40.7%（46.1%）；
+    //   叠加到 9:26 竞价额首选（425日）：出票天数 426→426、胜率 56.1%→56.6%、日均 +1.10%→+1.17%，仅 12 天换票。
+    const _rym=s=>{const m=klines[s.code]; if(!m||m.lbc!==1||m.vrY==null)return false;
+      const fmc=(+s.nmc||0)/1e4; return m.vrY>=2&&fmc>=100&&(+s.turnoverratio||0)<0.4;};
+    const _keep9=cands.filter(s=>!_rym(s));
+    return (_keep9.length?_keep9:cands).sort((a,b)=>(+b.amount||0)-(+a.amount||0)).slice(0,1);
   }
   // 分时位置 / 现价vs均价（盘中实时字段，无前视）
   const dayPos=(s)=>{const hi=+s.high,lo=+s.low,pr=+s.trade; if(!(hi>lo)||!pr)return null; return (pr-lo)/(hi-lo);};
