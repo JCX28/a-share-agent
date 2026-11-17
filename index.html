@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 15:54</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 16:53</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-17 15:54</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-17 16:53</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,11 +136,12 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），直接剔除不出票。</div>
     </div>
     <div class="group" id="gFirst">
       <div class="ghead"><span class="t-orange">今日首板 · 9:26 候选 → 9:35 确认</span><span class="tagc orange" id="cFirst">0 / 3</span></div>
       <div class="picks" id="pFirst"><div class="empty">等待运行</div></div>
-      <div class="note">口径：昨日未涨停 → 今日首板。9:26 只给<b>候选</b>：高开 3%~9.5% + 竞价额≥800万 + 流通≤150亿 + 开盘在前20日高 -2%~+8% + 「强高开／强抢筹」其一。9:35 用首根5分钟<b>确认</b>：收盘≥开盘 且 位置≥0.5，否则放弃。</div>
+      <div class="note">口径：昨日未涨停 → 今日首板。9:26 只给<b>候选</b>：高开 3%~9.5% + 竞价额≥800万 + 流通≤150亿 + 开盘在前20日高 -2%~+8% + 「强高开／强抢筹」其一。9:35 用首根5分钟<b>确认</b>：收盘≥开盘 且 位置≥0.5，否则放弃。竞价尾盘跳水≥5pp 直接剔除。</div>
       <details class="dtl"><summary>回测依据</summary><div>首板股 72.7% 竞价只高开 -3%~+2%，开板率仅 1%~2%，事前无法区分；封板率随高开单调上升（3~4%→14%、5~6%→25%、6~7%→40%、7~9.5%→46%~58%）。新规则全池封板 32%/41%、前3名 33%/44%（旧规则 25%/36%），强高开型(≥5%) 封板 41%/50%、触板 61%/64%。高开越高回撤越大，9:26 直接以开盘价买入期望≈0，必须等 9:35 确认。近 28 日：确认 9 只中 8 只封板，放弃 7 只全部未封板（样本小，仅作纪律）。</div></details>
     </div>
     <div class="group" id="gTrend">
@@ -307,6 +308,28 @@ async function fetchIndustry(codes){ // 东财批量行业归属(f100)：一次�
       if(d&&d.data&&Array.isArray(d.data.diff))d.data.diff.forEach(o=>{if(o.f12&&o.f100&&o.f100!=='-')out[o.f12]=o.f100;});
     }catch(e){break;} // 接口不可用即放弃，题材退化为"未识别"，不拖慢选股
   }
+  return out;
+}
+/* 竞价尾盘跳水幅度(pp)：9:20 后最高虚拟撮合价 → 9:25 成交价。
+   9:15~9:20 可撤单，涨停虚挂多为假单；9:20~9:25 不可撤，若此时价格被卖单砸下，说明抢筹已撤/大单出货。
+   返回 {code: 回落百分点}；接口失败则不返回该票（不误伤） */
+async function fetchAuctionDrop(codes){
+  const out={};
+  await poolRange(0, Math.max(0,codes.length-1), 5, async(i)=>{
+    const c=codes[i], sec=(/^6/.test(c)?'1.':'0.')+c;
+    try{
+      const d=await jsonp('https://push2.eastmoney.com/api/qt/stock/details/get?secid='+sec+'&fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&pos=-100000','cb',8000);
+      const dd=d&&d.data;
+      if(!dd||!dd.prePrice||!Array.isArray(dd.details))return;
+      const rows=dd.details.filter(x=>typeof x==='string'&&x<'09:26').map(x=>x.split(','));
+      if(!rows.length)return;
+      const late=rows.filter(r=>r[0]>='09:20:00'&&r[0]<'09:25:00');
+      if(!late.length)return;
+      const hi=Math.max.apply(null,late.map(r=>+r[1]));
+      const last=+rows[rows.length-1][1];
+      if(isFinite(hi)&&isFinite(last))out[c]=(hi-last)/dd.prePrice*100;
+    }catch(e){}
+  });
   return out;
 }
 async function fetchKlines(codes, n=12){ // 日K：{d,o,c,h,l,v}，升序(旧→新)。有网关走新浪JSON接口，否则走JSONP（窄带兜底，量单位=股，量比不受影响）
@@ -1419,12 +1442,25 @@ async function run(){
       _stTag.style.display='';
       _stTag.textContent='市场情绪 '+sentiment.toFixed(2)+' · '+_stage+(_gateMsg?' · '+_gateMsg:'');
     }
+    // ★竞价尾盘跳水硬剔除（2026-11-17 上线）：9:20 后最高虚拟撮合价 → 9:25 成交价，回落≥5pp 不出票。
+    //   依据：9:15~9:20 可撤单，顶在涨停的虚挂多是假单；9:20~9:25 不可撤，此时价格被砸下=抢筹撤离/大单出货。
+    //   当日实例：野马电池 6.96pp、金逸影视 6.24pp、天虹股份 5.56pp 收盘全部炸板。
+    //   只对最终候选票取明细（多取3只做缓冲，剔除后名额顺延）；东财只留当天明细，5pp 待实盘继续校准。
     // ★先去重再选：当日大涨与竞价·强势口径有交集（竞价高开4%以上且当前涨幅仍在0.5~7%），
     //   竞价模块已选的票从当日大涨候选里剔除，避免同一只票在两个卡片重复出现（名额顺延给下一名）
-    const auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE, ztMap);
-    const _aucCodes=new Set(auctionPicks.map(p=>p.code));
+    let auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE+3, ztMap);
+    let _aucCodes=new Set(auctionPicks.map(p=>p.code));
     // 今日首板：从竞价粗筛池里按「昨日未涨停 + 高开3~5.7% + 贴前高」取前3；9:35 后自动打确认/放弃标记
-    const firstPicks=buildFirstBoardPicks(fbShort.filter(s=>!_aucCodes.has(s.code)), fbKlines, 3);
+    let firstPicks=buildFirstBoardPicks(fbShort.filter(s=>!_aucCodes.has(s.code)), fbKlines, 5);
+    // 竞价尾盘校验：只对上面候选票取 9:15~9:25 明细，回落≥5pp 的剔除，剩余按名额截断
+    setStatus('正在核对竞价尾盘走势…','');
+    const _drops=await fetchAuctionDrop(Array.from(new Set([...auctionPicks.map(p=>p.code),...firstPicks.map(p=>p.code)])));
+    const _badAuc=code=>(_drops[code]||0)>=5;
+    const _cutA=auctionPicks.filter(p=>_badAuc(p.code)).length, _cutF=firstPicks.filter(p=>_badAuc(p.code)).length;
+    auctionPicks=auctionPicks.filter(p=>!_badAuc(p.code)).slice(0,nAucE);
+    firstPicks=firstPicks.filter(p=>!_badAuc(p.code)).slice(0,3);
+    _aucCodes=new Set(auctionPicks.map(p=>p.code));
+    if(_cutA+_cutF)src.push('<li><span class="bad">✗</span> 竞价尾盘跳水≥5pp 剔除 <b>'+(_cutA+_cutF)+'</b> 只</li>');
     await markFirstBoard(firstPicks);
     firstPicks.forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
     const trendPicks=buildTrendPicks(trendShort.filter(s=>!_aucCodes.has(s.code)), klines, flows, nTrendE, sentiment);
