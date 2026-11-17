@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 17:24</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 17:32</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-17 17:24</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-17 17:32</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -141,7 +141,7 @@
     <div class="group" id="gFirst">
       <div class="ghead"><span class="t-orange">今日首板 · 9:26 候选 → 9:35 确认</span><span class="tagc orange" id="cFirst">0 / 3</span></div>
       <div class="picks" id="pFirst"><div class="empty">等待运行</div></div>
-      <div class="note">口径：昨日未涨停 → 今日首板。9:26 只给<b>候选</b>：高开 3%~9.5% + 竞价额≥800万 + 流通≤150亿 + 开盘在前20日高 -2%~+8% + 「强高开／强抢筹」其一。9:35 用首根5分钟<b>确认</b>：收盘≥开盘 且 位置≥0.5，否则放弃。竞价尾盘跳水≥5pp 直接剔除（选票前）。</div>
+      <div class="note">口径：昨日未涨停 → 今日首板。9:26 只给<b>候选</b>：高开 3%~9.5% + 竞价额≥300万 + 流通≤150亿 + 开盘在前20日高 -2%~+8% + 「强高开／强抢筹」其一。9:35 用首根5分钟<b>确认</b>：收盘≥开盘 且 位置≥0.5，否则放弃。竞价尾盘跳水≥5pp 直接剔除（选票前）。</div>
       <details class="dtl"><summary>回测依据</summary><div>首板股 72.7% 竞价只高开 -3%~+2%，开板率仅 1%~2%，事前无法区分；封板率随高开单调上升（3~4%→14%、5~6%→25%、6~7%→40%、7~9.5%→46%~58%）。新规则全池封板 32%/41%、前3名 33%/44%（旧规则 25%/36%），强高开型(≥5%) 封板 41%/50%、触板 61%/64%。高开越高回撤越大，9:26 直接以开盘价买入期望≈0，必须等 9:35 确认。近 28 日：确认 9 只中 8 只封板，放弃 7 只全部未封板（样本小，仅作纪律）。</div></details>
     </div>
     <div class="group" id="gTrend">
@@ -963,7 +963,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
 //   ④ 位置：开盘在前20日最高价下方 2% 以内或上方 0~8% 最好；低于 -2% 封板率仅 1.2%，高于 +8% 属过度跳空；
 //   ⑤ 昨日涨幅 6~9.7% 或大跌 -9~-6%（反包）是相对高发区；5日动量 20%+、昨日量比 3+ 也有正贡献；
 //   ⑥ 流通市值影响很小（1.0%~1.8%），80亿上限意义不大，放宽到 150亿即可。
-// 新规则：高开 3.0~9.5 + 竞价额≥800万 + 流通≤150亿 + 开盘在前高 -2%~+8% +（强高开 或 强抢筹）
+// 新规则：高开 3.0~9.5 + 竞价额≥300万 + 流通≤150亿 + 开盘在前高 -2%~+8% +（强高开 或 强抢筹）
 //   全池封板 32.1%/40.9%（训练/测试），每日按强度分取前3 → 33.3%/43.7%；其中强高开型(gap≥5) 40.9%/50.0%、
 //   触板 61%/64%，强抢筹型(gap3~5) 20.2%/25.0%。旧规则对照：全池 25.0%/35.6%、Top3 26.9%/34.0%。
 // 但高开越高、失败回撤越大：以开盘价买入并持有到收盘的期望≈0（gap≥5 甚至为负），
@@ -987,7 +987,7 @@ function buildFirstBoardPicks(cands, klines, n){
     const fmc=(+s.nmc||0)/1e4;
     if(!(fmc>0&&fmc<=150))return;                                 // 流通≤150亿（弱因子，只挡大票）
     const aucAmt=pre?pre.aucAmt:(amtR*fmc*100);                   // 竞价额(万元)
-    if(aucAmt<800)return;                                         // 竞价额≥800万
+    if(aucAmt<300)return;                                         // 竞价额≥300万
     const gapHi=(km.hi20&&+s.open)?((+s.open/km.hi20-1)*100):null;
     if(gapHi==null||gapHi< -2||gapHi>8)return;                    // 开盘价在前20日高 -2%~+8%
     const vrY=(km.vrY!=null?km.vrY:(km.vr||0));
@@ -1339,7 +1339,7 @@ async function run(){
         const strong=(og>=5.0&&ar>=0.05)||ar>=0.20;          // 强高开 或 强抢筹
         if(!strong)return false;
         if(!(fmc>0&&fmc<=150))return false;                  // 流通≤150亿
-        if(ar*fmc*100<800)return false;                      // 竞价额≥800万
+        if(ar*fmc*100<300)return false;                      // 竞价额≥300万
         return true;
       }).sort((a,b)=>{
         const _r=s=>Math.min(Math.max(_ogOf(s),0),9.5)/9.5*0.55+Math.min(_aucAmtR(s),0.5)/0.5*0.45;
