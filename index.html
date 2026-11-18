@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 21:54</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 22:14</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-18 21:54</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-18 22:14</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -141,7 +141,7 @@
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
-      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标「此刻 → 收盘」仍明显上涨。剔除分时位置&lt;20%、现价/均价&lt;0.98、炸板票。排序 = 涨幅 + 分时位置 + 现价/均价 + 时间归一量比 + 昨日强弱，叠加<b>题材新鲜度</b>与<b>分时强度</b>。<b>9:26 竞价口径</b>（开盘前 5 分钟）改为按竞价额取 1 只，并优先<b>竞价撤单回补 50%~90%</b> 的票（9:15~9:20 虚拟匹配量被撤掉后 9:20 又补回 = 真实承接）；无合格票时退回竞价额首选，不空仓。</div>
+      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标「此刻 → 收盘」仍明显上涨。剔除分时位置&lt;20%、现价/均价&lt;0.98、炸板票。排序 = 涨幅 + 分时位置 + 现价/均价 + 时间归一量比 + 昨日强弱，叠加<b>题材新鲜度</b>与<b>分时强度</b>。<b>9:26 竞价口径</b>（开盘前 5 分钟）改为按竞价额取 1 只，并优先<b>竞价撤单回补 50%~90%</b> 的票（9:15~9:20 虚拟匹配量被撤掉后 9:20 又补回 = 真实承接）；无合格票时退回竞价额首选，不空仓。另设两道<b>竞价/昨日闸门</b>：竞价换手 <b>≥0.25%</b>、剔除<b>昨日未涨停却收在全天最高 5%</b>（上冲没封住 + 今日只微高开 = 买在昨日获利盘成本线）。</div>
       <details class="dtl"><summary>回测依据</summary><div>主板×66日×15分钟，T时刻买入→收盘：全样本再涨≥2% 命中 9.7%，4~7% 组 17%~21%（6~7% 最高）。剔除分时位置&lt;20%（均值 -0.44%）、现价/均价&lt;0.98（-0.47%）、触板后炸板。模拟每日取 2 只：≥2% 命中 22%，平均收盘涨幅 5.56%（基准 2.43%）。<br>9:26 竞价口径（176 交易日 / 873 只正式池，买开盘→卖收盘，命中=≥+2%，每日取 1 只）：按竞价额首选 45.6%/+1.36%（171 天）；叠加「撤单回补 0.5~0.9 优先、否则退回」50.3%/+1.78%（171 天全覆盖，前段 +1.11 / 后段 +2.43，换票 72 天、每换票日 +0.98%）；若改成硬过滤则 49.4%/+1.68% 但只剩 156 天。427 日复核：竞价额闸门与市值上限均无增量，故只加撤单回补、不加竞价额门槛。</div></details>
     </div>
     <div class="group" id="gFirst">
@@ -1384,7 +1384,7 @@ async function run(){
       // ★2026-11-14 两道竞价硬门槛（同池 429日）：竞价额<300万 日均 -0.15%/t=-2.74；竞价换手 0.15~0.25% 最优 +0.16%
       const _hs9=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
       if((+s.amount||0)<5e6)return false;                        // 竞价额 ≥500万
-      if(_hs9<0.15)return false;                                 // 竞价换手 ≥0.15%
+      if(_hs9<0.25)return false;                                 // 竞价换手 ≥0.25%（★2026-11-18 由 0.15% 上调：400日 <0.25% 组日均 -0.03%/崩35.8%，调后 命中43.7%→44.1%、日均+0.99%→+1.14%）
       if(!(chg>=0.5&&chg<=7))return false;                       // 已涨 0.5%~7%（留出到收盘的空间）
       if(chg>=l*0.93)return false;                               // 接近/触及涨停不选
       if(hi&&stl&&(hi/stl-1)*100>=l*0.95-0.01)return false;      // 盘中曾触及涨停（炸板/一字）不选
@@ -1498,6 +1498,13 @@ async function run(){
     const _hot4=c=>{const m=klines[c]; return !!(m&&m.lbc>=4);};
     const _cntBefore=trendShort.length+auctionCands.length+intraShort.length;
     trendShort=trendShort.filter(s=>!_hot4(s.code));
+    // ★2026-11-18 ② 昨日"未涨停却收在全天最高5%"：昨日上冲没封住、今日只微高开(0.5~1.5%)，
+    //   等于买在昨日获利盘成本线上；400日该组合仅 9 天，却 命中11.1%/失败77.8%/崩77.8%/日均-3.01%。
+    //   必须带"非涨停"前提：昨涨停+posy≥0.95 有 225 天、日均 +0.83%，属正常封板形态，不能一起剔。
+    //   剔除后：命中 43.7%→44.2%、日均 +0.99%→+1.17%、崩 25.9%→22.9%，出票 398→380 天。
+    //   （放在此处而非上面 trends 过滤里：klines 在此才构建完成）
+    trendShort=trendShort.filter(s=>{const m=klines[s.code];
+      return !(m&&m.posy!=null&&m.yestChg<9.7&&m.posy>=0.95);});
     intraShort=intraShort.filter(s=>!_hot4(s.code));
     const _cut4=_cntBefore-(trendShort.length+auctionCands.length+intraShort.length);
     src.push('<li><span class="ok">✓</span> 连板≥4 剔除 <b>'+_cut4+'</b> 只（仅大涨/T+1组；竞价组按分档条件处理）</li>');
