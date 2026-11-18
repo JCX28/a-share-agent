@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-17 17:42</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 10:58</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-17 17:42</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-18 10:58</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -138,17 +138,17 @@
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
       <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。</div>
     </div>
-    <div class="group" id="gFirst">
-      <div class="ghead"><span class="t-orange">今日首板 · 9:26 候选 → 9:35 确认</span><span class="tagc orange" id="cFirst">0 / 3</span></div>
-      <div class="picks" id="pFirst"><div class="empty">等待运行</div></div>
-      <div class="note">口径：昨日未涨停 → 今日首板。9:26 只给<b>候选</b>：高开 3%~9.5% + 竞价额≥300万 + 流通≤150亿 + 开盘在前20日高 -2%~+8% + 「强高开／强抢筹」其一。9:35 用首根5分钟<b>确认</b>：收盘≥开盘 且 位置≥0.5，否则放弃。竞价尾盘跳水≥5pp 直接剔除（选票前）。</div>
-      <details class="dtl"><summary>回测依据</summary><div>首板股 72.7% 竞价只高开 -3%~+2%，开板率仅 1%~2%，事前无法区分；封板率随高开单调上升（3~4%→14%、5~6%→25%、6~7%→40%、7~9.5%→46%~58%）。新规则全池封板 32%/41%、前3名 33%/44%（旧规则 25%/36%），强高开型(≥5%) 封板 41%/50%、触板 61%/64%。高开越高回撤越大，9:26 直接以开盘价买入期望≈0，必须等 9:35 确认。近 28 日：确认 9 只中 8 只封板，放弃 7 只全部未封板（样本小，仅作纪律）。</div></details>
-    </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
       <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标「此刻 → 收盘」仍明显上涨。剔除分时位置&lt;20%、现价/均价&lt;0.98、炸板票。排序 = 涨幅 + 分时位置 + 现价/均价 + 时间归一量比 + 昨日强弱，叠加<b>题材新鲜度</b>与<b>分时强度</b>。</div>
       <details class="dtl"><summary>回测依据</summary><div>主板×66日×15分钟，T时刻买入→收盘：全样本再涨≥2% 命中 9.7%，4~7% 组 17%~21%（6~7% 最高）。剔除分时位置&lt;20%（均值 -0.44%）、现价/均价&lt;0.98（-0.47%）、触板后炸板。模拟每日取 2 只：≥2% 命中 22%，平均收盘涨幅 5.56%（基准 2.43%）。</div></details>
+    </div>
+    <div class="group" id="gFirst">
+      <div class="ghead"><span class="t-orange">今日首板 · 9:26 候选 → 9:35 确认</span><span class="tagc orange" id="cFirst">0 / 3</span></div>
+      <div class="picks" id="pFirst"><div class="empty">等待运行</div></div>
+      <div class="note">口径：昨日未涨停 → 今日首板。9:26 只给<b>候选</b>：高开 3%~9.5% + 竞价额≥300万 + 流通≤150亿 + 开盘在前20日高 -2%~+8% + 「强高开／强抢筹」其一。9:35 用首根5分钟<b>确认</b>：收盘≥开盘 且 位置≥0.5，否则放弃。竞价尾盘跳水≥5pp 直接剔除（选票前）。<b>与竞价·强势确认可重复出票</b>（两套逻辑独立）。</div>
+      <details class="dtl"><summary>回测依据</summary><div>首板股 72.7% 竞价只高开 -3%~+2%，开板率仅 1%~2%，事前无法区分；封板率随高开单调上升（3~4%→14%、5~6%→25%、6~7%→40%、7~9.5%→46%~58%）。新规则全池封板 32%/41%、前3名 33%/44%（旧规则 25%/36%），强高开型(≥5%) 封板 41%/50%、触板 61%/64%。高开越高回撤越大，9:26 直接以开盘价买入期望≈0，必须等 9:35 确认。近 28 日：确认 9 只中 8 只封板，放弃 7 只全部未封板（样本小，仅作纪律）。</div></details>
     </div>
     <div class="group" id="gIntra">
       <div class="ghead"><span class="t-orange">T+1选股大涨 · 平开低吸</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
@@ -1468,7 +1468,7 @@ async function run(){
     let auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE+3, ztMap);
     let _aucCodes=new Set(auctionPicks.map(p=>p.code));
     // 今日首板：从竞价粗筛池里按「昨日未涨停 + 高开3~5.7% + 贴前高」取前3；9:35 后自动打确认/放弃标记
-    let firstPicks=buildFirstBoardPicks(fbShort.filter(s=>!_aucCodes.has(s.code)), fbKlines, 5).slice(0,3);
+    let firstPicks=buildFirstBoardPicks(fbShort, fbKlines, 5).slice(0,3);
     await markFirstBoard(firstPicks);
     firstPicks.forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
     const trendPicks=buildTrendPicks(trendShort.filter(s=>!_aucCodes.has(s.code)), klines, flows, nTrendE, sentiment);
