@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 21:44</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 21:54</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-18 21:44</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-18 21:54</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -883,6 +883,8 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     if(s._aucHold!=null){ if(s._aucHold===3)sc+=12; else if(s._aucHold>=4)sc-=18; }
     if(s._aucVRet!=null&&s._aucVRet>1.3)sc-=12;
     if(s._aucGrws!=null&&s._aucGrws>=1&&s._aucGrws<2)sc-=15;
+    // ③ 备b档（量比/补涨）内：昨日量比 2~3 是失败率 34.2% 的危险档（400日），只在该档内降权，不硬剔
+    if(bx>0&&vr>=2&&vr<3)sc-=15;
     // ★2026-11-18 竞价过程（9:15~9:25）两类信号，只调分不硬剔：
     //   176日 3.7~5.7 首选带（150只/92天，无前视）：基线封板 36.7%、开→收 +0.15%；
     //   ①尾盘30s被砸低（9:24:30 撮合价 > 9:25 成交价）：25只 封板仅 16.0%、开→收 -0.79%、崩28.0% → 扣分；
