@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 21:20</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 21:44</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-18 21:20</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-18 21:44</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,7 +136,7 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
-      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。另叠<b>竞价过程评分</b>：9:24:30 撮合价高于 9:25 成交价（<b>尾盘30秒被砸低</b>）扣分，9:15~9:20 撤单后 9:20 又回补 <b>50%~90%</b> 加分（只降权、不硬剔，避免空仓）。</div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。另叠<b>竞价过程评分</b>：9:24:30 撮合价高于 9:25 成交价（<b>尾盘30秒被砸低</b>）扣分，9:15~9:20 撤单后 9:20 又回补 <b>50%~90%</b> 加分。评分另含<b>竞价走势</b>：虚拟价顶板持续 <b>3/6 个时点</b>（顶到 9:20~9:22）加分，顶到 <b>9:24 才崩</b>扣分；9:15→9:18 量能<b>放大&gt;30%</b> 扣分；9:20→9:25 量能<b>仅放大 1~2 倍</b>扣分。静态面：高开<b>≥6.5%</b>、10日涨幅<b>25%~35%</b>、竞价换手<b>0.5%~1.0%</b>、竞价额<b>2000~3000万</b> 扣分，竞价额 <b>3000~5000万</b> 加分（只降权/加闸，不硬剔，避免空仓）。</div>
     </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
@@ -348,7 +348,20 @@ async function fetchAuctionDrop(codes){
         const pn=best?+best[1]:NaN;
         if(isFinite(pn)&&isFinite(lastA)&&lastA>0&&bd<=5)o.s30=(pn/lastA-1)*100;
       }
-      if(o.dd!=null||o.wdd!=null||o.s30!=null)out[c]=o;
+      // ④ 走势三件套（176日实测）：顶板持续数 hold / 9:15→9:18 量能保留率 vret / 9:20→9:25 量能倍率 grws
+      //    hold：6 个时点中虚拟撮合价≥涨停-0.5pp 的个数（3 最好，4~5 最差）；vret>1.3 崩盘率翻倍；grws 1~2 倍区间封板仅 13.7%
+      if(rows.length){
+        const seq=rows.map(r=>{const t=r[0];return {sec:(+t.slice(3,5))*60+(+t.slice(6,8)),p:+r[1],q:+r[2]};});
+        const near=sec=>{let b=null,bd=999;seq.forEach(x=>{const df=Math.abs(x.sec-sec);if(df<bd){bd=df;b=x;}});return bd<=8?b:null;};
+        const P925=+rows[rows.length-1][1], Q925=+rows[rows.length-1][2];
+        let hold=((P925/dd.prePrice-1)*100>=9.5)?1:0;
+        [555,558,560,562,564].forEach(sec=>{const x=near(sec); if(x&&(x.p/dd.prePrice-1)*100>=9.5)hold++;});
+        o.hold=hold;
+        const a=near(555), b=near(558), c20=near(560);
+        if(a&&b&&a.q>0)o.vret=b.q/a.q;
+        if(c20&&c20.q>0&&Q925>0)o.grws=Q925/c20.q;
+      }
+      if(o.dd!=null||o.wdd!=null||o.s30!=null||o.hold!=null)out[c]=o;
     }catch(e){}
   });
   return out;
@@ -780,6 +793,8 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   代价：崩盘 15 天（18%），比只做首板档（7天/19%）多；换来的是有票天数从 39 → 84。
     const vrY=(km&&km.vrY!=null)?km.vrY:(km?km.vr:0);
     const hiConf=(lbc===1&&c10!=null&&c10>=35&&c10<=45&&openGap<=5.3&&amtR>=0.35&&aucAmt>=1500&&vrY>=0.7);        // ④ 高置信（首板·涨幅偏强·0.35%换手即可）
+    // ★2026-11-18 试过给首板档加「昨日量比<2 且未收在最高」闸门（400日失败票里 84% 昨日收最高），
+    //   但 400 日实测该闸门把首板档降级后由备选替补：封板 55.8%→54.1%、崩 16.0%→17.8% → 已回退，不加。
     const lb1Conf=(lbc===1&&c10!=null&&c10>=15&&c10<=45&&openGap<=5.7&&amtR>=0.70&&aucAmt>=1500&&fmc>0&&fmc<=80); // ① 首板档
     // ★2026-11-12 二连板档加市值下限 40 亿：该档 270日 31 个样本里，流通市值<40亿 15天封板仅40.0%、开→收-4.00%，
     //   ≥40亿 16天封板81.2%、开→收+1.83%（惠发食品 603536 即市值28亿、二板缩量后高开5.5%触板炸板-9.6%）。
@@ -854,6 +869,20 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   对照：同量比下竞价换手≤0.4% 封板 80%/开→收+3.16%（真无量反而封得住），≥0.7% 封板 67%/+2.55%。
     //   效果（15日）：首选封板 71%→79%、开→收 +2.16%→+2.98%；合计开→收 +2.97%→+3.31%、胜率 78%→81%。
     if(vr>=1.8&&amtR>=0.4&&amtR<0.7)sc-=25*aw.amtR;
+    // ★2026-11-18 六条失败归因（400日 326 天出票 88 天失败 27.0%）：
+    //   ② 高开≥6.5% 崩盘 25.0%、开→收 -1.85%；10日涨幅 25~35% 崩 31.0%、开→收 -0.46%（两头都不如）
+    if(openGap>=6.5)sc-=20;
+    if(c10!=null&&c10>=25&&c10<35)sc-=15;
+    //   ③ 竞价换手 0.5~1.0% 失败 33.0%、开→收 +0.16%（最差段）；竞价额 2000~3000万 失败 32.6%，
+    //     而 3000~5000万 失败仅 17.9%、崩 7.5%（最稳段）→ 一降一升
+    if(amtR>=0.5&&amtR<1.0)sc-=8;
+    if(aucAmt>=2000&&aucAmt<3000)sc-=8;
+    if(aucAmt>=3000&&aucAmt<5000)sc+=8;
+    //   ④⑤⑥ 竞价走势三件套（176日）：顶板持续数 3/6 最好（封板59.6%/+1.55%）、4~5/6 最差（27.6%/-2.13%/崩31%）；
+    //     9:15→9:18 量能保留率>130% 崩盘率翻倍；9:20→9:25 量能倍率 1~2 倍封板仅 13.7%
+    if(s._aucHold!=null){ if(s._aucHold===3)sc+=12; else if(s._aucHold>=4)sc-=18; }
+    if(s._aucVRet!=null&&s._aucVRet>1.3)sc-=12;
+    if(s._aucGrws!=null&&s._aucGrws>=1&&s._aucGrws<2)sc-=15;
     // ★2026-11-18 竞价过程（9:15~9:25）两类信号，只调分不硬剔：
     //   176日 3.7~5.7 首选带（150只/92天，无前视）：基线封板 36.7%、开→收 +0.15%；
     //   ①尾盘30s被砸低（9:24:30 撮合价 > 9:25 成交价）：25只 封板仅 16.0%、开→收 -0.79%、崩28.0% → 扣分；
@@ -1525,7 +1554,8 @@ async function run(){
     trendShort.forEach(s=>{const o=_drops[s.code]; if(o&&o.wdd!=null)s._aucWdd=o.wdd;});
     // ★2026-11-18 竞价组：撤单回补 + 尾盘30秒（只参与评分，不做硬剔，避免空仓）
     auctionCands.forEach(s=>{const o=_drops[s.code]; if(!o)return;
-      if(o.wdd!=null)s._aucWdd=o.wdd; if(o.s30!=null)s._aucS30=o.s30;});
+      if(o.wdd!=null)s._aucWdd=o.wdd; if(o.s30!=null)s._aucS30=o.s30;
+      if(o.hold!=null)s._aucHold=o.hold; if(o.vret!=null)s._aucVRet=o.vret; if(o.grws!=null)s._aucGrws=o.grws;});
     const _cutA=auctionCands.filter(s=>_badAuc(s.code)).length, _cutF=fbShort.filter(s=>_badAuc(s.code)).length;
     auctionCands=auctionCands.filter(s=>!_badAuc(s.code));
     fbShort=fbShort.filter(s=>!_badAuc(s.code));
