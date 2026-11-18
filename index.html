@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 22:14</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-18 22:33</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-18 22:14</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-18 22:33</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -141,8 +141,8 @@
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
-      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标「此刻 → 收盘」仍明显上涨。剔除分时位置&lt;20%、现价/均价&lt;0.98、炸板票。排序 = 涨幅 + 分时位置 + 现价/均价 + 时间归一量比 + 昨日强弱，叠加<b>题材新鲜度</b>与<b>分时强度</b>。<b>9:26 竞价口径</b>（开盘前 5 分钟）改为按竞价额取 1 只，并优先<b>竞价撤单回补 50%~90%</b> 的票（9:15~9:20 虚拟匹配量被撤掉后 9:20 又补回 = 真实承接）；无合格票时退回竞价额首选，不空仓。另设两道<b>竞价/昨日闸门</b>：竞价换手 <b>≥0.25%</b>、剔除<b>昨日未涨停却收在全天最高 5%</b>（上冲没封住 + 今日只微高开 = 买在昨日获利盘成本线）。</div>
-      <details class="dtl"><summary>回测依据</summary><div>主板×66日×15分钟，T时刻买入→收盘：全样本再涨≥2% 命中 9.7%，4~7% 组 17%~21%（6~7% 最高）。剔除分时位置&lt;20%（均值 -0.44%）、现价/均价&lt;0.98（-0.47%）、触板后炸板。模拟每日取 2 只：≥2% 命中 22%，平均收盘涨幅 5.56%（基准 2.43%）。<br>9:26 竞价口径（176 交易日 / 873 只正式池，买开盘→卖收盘，命中=≥+2%，每日取 1 只）：按竞价额首选 45.6%/+1.36%（171 天）；叠加「撤单回补 0.5~0.9 优先、否则退回」50.3%/+1.78%（171 天全覆盖，前段 +1.11 / 后段 +2.43，换票 72 天、每换票日 +0.98%）；若改成硬过滤则 49.4%/+1.68% 但只剩 156 天。427 日复核：竞价额闸门与市值上限均无增量，故只加撤单回补、不加竞价额门槛。</div></details>
+      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标「此刻 → 收盘」仍明显上涨。剔除分时位置&lt;20%、现价/均价&lt;0.98、炸板票。排序 = 涨幅 + 分时位置 + 现价/均价 + 时间归一量比 + 昨日强弱，叠加<b>题材新鲜度</b>与<b>分时强度</b>。<b>9:26 竞价口径</b>（开盘前 5 分钟）改为按竞价额取 1 只，并优先<b>竞价撤单回补 50%~90% 且 9:20→9:25 涨幅 ≥+0.5%</b> 的票（9:15~9:20 虚拟匹配量被撤掉后 9:20 又补回、且最后 5 分钟仍在加价 = 真实承接）；无合格票时退回竞价额首选，不空仓。另设两道<b>竞价/昨日闸门</b>：竞价换手 <b>≥0.25%</b>、剔除<b>昨日未涨停却收在全天最高 5%</b>（上冲没封住 + 今日只微高开 = 买在昨日获利盘成本线）。</div>
+      <details class="dtl"><summary>回测依据</summary><div>主板×66日×15分钟，T时刻买入→收盘：全样本再涨≥2% 命中 9.7%，4~7% 组 17%~21%（6~7% 最高）。剔除分时位置&lt;20%（均值 -0.44%）、现价/均价&lt;0.98（-0.47%）、触板后炸板。模拟每日取 2 只：≥2% 命中 22%，平均收盘涨幅 5.56%（基准 2.43%）。<br>9:26 竞价口径（176 交易日 / 873 只正式池，买开盘→卖收盘，命中=≥+2%，每日取 1 只）：按竞价额首选 45.6%/+1.36%（171 天）；叠加「撤单回补 0.5~0.9 优先、否则退回」50.3%/+1.78%（171 天全覆盖，前段 +1.11 / 后段 +2.43，换票 72 天、每换票日 +0.98%）；若改成硬过滤则 49.4%/+1.68% 但只剩 156 天。427 日复核：竞价额闸门与市值上限均无增量，故只加撤单回补、不加竞价额门槛。<br>加权升级（155 日 / 516 只，叠加 9:20→9:25 ≥+0.5%）：42.6%/+1.36%/崩 23.9% → <b>44.5%/+1.42%/崩 19.4%</b>（155 天全覆盖，换票 46 天，换票日新票 41.3%/+0.64% vs 老票 0%/+0.41%）。</div></details>
     </div>
     <div class="group" id="gFirst">
       <div class="ghead"><span class="t-orange">今日首板 · 9:26 出票</span><span class="tagc orange" id="cFirst">0 / 3</span></div>
@@ -360,8 +360,10 @@ async function fetchAuctionDrop(codes){
         const a=near(555), b=near(558), c20=near(560);
         if(a&&b&&a.q>0)o.vret=b.q/a.q;
         if(c20&&c20.q>0&&Q925>0)o.grws=Q925/c20.q;
+        // ⑤ r20 = 9:20 虚拟撮合价 → 9:25 成交价(%)：≥+0.5 表示最后 5 分钟仍在加价（155日：与撤单回补叠加时命中+1.9pp、崩盘-4.5pp）
+        if(c20&&c20.p>0&&P925>0)o.r20=(P925/c20.p-1)*100;
       }
-      if(o.dd!=null||o.wdd!=null||o.s30!=null||o.hold!=null)out[c]=o;
+      if(o.dd!=null||o.wdd!=null||o.s30!=null||o.hold!=null||o.r20!=null)out[c]=o;
     }catch(e){}
   });
   return out;
@@ -496,7 +498,10 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
     //   176日（873只正式池）每日1只：纯按竞价额 45.6%/+1.36% → 合格票优先、否则退回 50.3%/+1.78%
     //   （171天全覆盖，前段 +1.11/后段 +2.43，换票 72 天、每换票日 +0.98%）；硬过滤虽 49.4%/+1.68% 但只剩 156 天，故只做排序优先。
     //   逐笔接口取不到（_aucWdd 为空）时自动按原竞价额口径，不误伤。
-    const _wOk=s=>{const w=s._aucWdd; return w!=null&&w>=0.5&&w<=0.9;};
+    //   ★2026-11-18 升级：再叠加 9:20→9:25 涨幅 ≥+0.5%（_aucR20），两者同时满足才优先。
+    //   155日（516只）：基线 42.6%/+1.36%/崩23.9% → 联合 44.5%/+1.42%/崩19.4%（155天全覆盖，换票46天，
+    //   换票日新票命中41.3%/+0.64% vs 老票 0%/+0.41%）。
+    const _wOk=s=>{const w=s._aucWdd; return w!=null&&w>=0.5&&w<=0.9&&s._aucR20!=null&&s._aucR20>=0.5;};
     return (_keep9.length?_keep9:cands).slice()
       .sort((a,b)=>(_wOk(b)?1:0)-(_wOk(a)?1:0)||((+b.amount||0)-(+a.amount||0))).slice(0,1);
   }
@@ -1560,7 +1565,8 @@ async function run(){
     const _drops=await fetchAuctionDrop(Array.from(new Set([...auctionCands.map(s=>s.code),...fbShort.map(s=>s.code),..._wddNeed])));
     const _badAuc=code=>{const o=_drops[code];return !!(o&&o.dd>=5);};
     fbShort.forEach(s=>{const o=_drops[s.code]; if(o&&o.wdd!=null)s._aucWdd=o.wdd;});
-    trendShort.forEach(s=>{const o=_drops[s.code]; if(o&&o.wdd!=null)s._aucWdd=o.wdd;});
+    trendShort.forEach(s=>{const o=_drops[s.code]; if(o&&o.wdd!=null)s._aucWdd=o.wdd;
+      if(o&&o.r20!=null)s._aucR20=o.r20;});
     // ★2026-11-18 竞价组：撤单回补 + 尾盘30秒（只参与评分，不做硬剔，避免空仓）
     auctionCands.forEach(s=>{const o=_drops[s.code]; if(!o)return;
       if(o.wdd!=null)s._aucWdd=o.wdd; if(o.s30!=null)s._aucS30=o.s30;
