@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 14:40</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 15:19</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-19 14:40</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-19 15:19</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -352,6 +352,7 @@ async function fetchAuctionDrop(codes){
       const seq=rows.map(r=>{const t=r[0];return {sec:(+t.slice(3,5))*60+(+t.slice(6,8)),p:+r[1],q:+r[2]};});
       const near=sec=>{let b=null,bd=999;seq.forEach(x=>{const df=Math.abs(x.sec-sec);if(df<bd){bd=df;b=x;}});return bd<=8?b:null;};
       const P925=+rows[rows.length-1][1], Q925=+rows[rows.length-1][2];
+      o.p925=P925; o.q925=Q925;                                  // 9:25 撮合价/量（手）→ 真实竞价换手
       const a=near(900), b=near(1080), c20=near(1200);
       if(a&&a.p>0&&P925>0)o.rAll=(P925/a.p-1)*100;
       if(a&&a.q>0&&Q925>0)o.vAll=Q925/a.q;
@@ -756,7 +757,7 @@ function themeEval(code, secToday, secPrev, ztMap, prevMap, hasPrev, indMap){ //
    故：①高开上限收到8%（开盘即顶硬剔）；②排序键由"竞价换手率单键"改为综合分（高开甜点+竞价资金+动量+量能），
    amtR 封顶2.5%并入评分——单一 amtR 排序会把"竞价巨量=高位分歧"的票直接顶到第一（2026-11 连续三日推荐
    锡华科技/皇台酒业/扬子新材均属此列）；③昨跌>5%、chg5>30% 不再奖励。 */
-function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap){
+function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap, drops){
   flows=flows||{};
   if(!(hotSector instanceof Set))hotSector=new Set();
   // 盘中炸板硬剔除（实时口径，不依赖涨停池zbc）：盘中最高已触及涨停、但当前已跌破涨停(炸板未回封)的票，一律剔除。
@@ -777,7 +778,12 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     // ★量比一律用「昨日量比」vrY：竞价判定只允许 9:25 竞价 + 昨日及以前信息，防止盘中当日累计量混入（无前视）
     const vr=km?(km.vrY!=null?km.vrY:km.vr):0;
     const hot=hotSector.has(s.hybk);
-    const amtR=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0); // 竞价换手率(竞价成交额/流通市值，9:26可得)
+    // ★竞价换手率优先用「9:25 真实竞价成交量」：sort 时 turnoverratio 是累计换手（盘中运行会放大 10~20 倍），
+    //   有竞价明细时一律用 q925*100*p925/流通市值，保证 9:26 之后重跑也是竞价口径（无前视）
+    const _dr=drops&&drops[s.code];
+    const _auT=(_dr&&_dr.q925>0&&_dr.p925>0&&+s.nmc>0)?(_dr.q925*100*_dr.p925/(+s.nmc)*100):null;
+    const amtR=(_auT!=null)?_auT:((+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0)); // 竞价换手率(竞价成交额/流通市值，9:26可得)
+    if(amtR!=null)s._amtR=amtR;                                   // 卡片展示用（盘中重跑也显示竞价口径）
     const fmc=(+s.nmc||0)/1e4; // 流通市值(亿)；新浪 nmc 单位万元
     // ★竞价成交额(万元) = 竞价换手率% × 流通市值(亿) × 100（与 tushare stk_auction.amount 实测一致：0.52%×110亿=5720万）
     const aucAmt=amtR*fmc*100;
@@ -1099,7 +1105,7 @@ function auctionCard(p, rank, km){
   const ogNum=(+p.open&&+p.settlement)?((+p.open/+p.settlement-1)*100):0;
   const openGap=ogNum.toFixed(1);
   const vr=km?(km.vrY!=null?km.vrY:km.vr):NaN;   // 昨日量比（恒不含今日，无前视）
-  const _amtR=(+p.turnoverratio||0)||((+p.amount&&+p.nmc)?(+p.amount/(p.nmc*1e4)*100):0);
+  const _amtR=(p._amtR!=null)?p._amtR:((+p.turnoverratio||0)||((+p.amount&&+p.nmc)?(+p.amount/(p.nmc*1e4)*100):0));
   const _aucAmt=_amtR*((+p.nmc||0)/1e4)*100;      // 竞价成交额(万元)
   const _c10=(km&&km.chg10!=null)?km.chg10:null;   // 前10日涨幅(昨收/10日前收盘，9:26可知)
   const _vrY=(km&&km.vrY!=null)?km.vrY:(km?km.vr:0); // 昨日量比（盘中已回退到昨日）
@@ -1539,7 +1545,7 @@ async function run(){
     if(_cutA+_cutF)src.push('<li><span class="bad">✗</span> 竞价尾盘跳水≥5pp 剔除 <b>'+(_cutA+_cutF)+'</b> 只（选票前剔除）</li>');
     // ★先去重再选：当日大涨与竞价·强势口径有交集（竞价高开4%以上且当前涨幅仍在0.5~7%），
     //   竞价模块已选的票从当日大涨候选里剔除，避免同一只票在两个卡片重复出现（名额顺延给下一名）
-    let auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE+3, ztMap);
+    let auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE+3, ztMap, _drops);
     // 黄金5分钟（竞价放量）：开0~8% + 竞价换手>0.25% + 9:15→9:25 量能>2.5×
     let g5Picks=buildGolden5(fbShort, fbKlines, _drops, 3);
     g5Picks.forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
