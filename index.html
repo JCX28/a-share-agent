@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 13:44</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 13:53</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-19 13:44</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-19 13:53</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -147,8 +147,8 @@
     <div class="group" id="gProfit">
       <div class="ghead"><span class="t-orange">盈利版块 · 9:26 竞价低开回踩</span><span class="tagc orange" id="cProfit">0 / 3</span></div>
       <div class="picks" id="pProfit"><div class="empty">等待运行</div></div>
-      <div class="note">口径：竞价涨幅 <b>-2.7%~+1.5%</b>（<b>不要求昨日涨停</b>）。硬条件：<b>近 5 日涨幅 ≥10%</b>（近一周强势）+ <b>昨日振幅 ≥7%</b>（昨天有真实换手，非一字/僵尸）+ 竞价额 ≥500 万 + 流通 ≤300 亿；竞价路径必须「9:15→9:25 未被砸穿（≥-1%）」且「9:15~9:20 虚拟量撤掉后回补（wdd≥0.5）」。按<b>竞价额降序</b>取 3 只。买点=9:25 集合竞价成交价（即开盘价），目标当日收盘。</div>
-      <details class="dtl"><summary>回测依据（177 个交易日 · 无前视）</summary><div>-2.7%~+1.5% 整段本身没有 alpha（均 -0.01%、涨≥1.5% 22.7%），必须叠前几日形态与竞价路径。去掉「昨日涨停」硬条件后，用「近5日涨幅≥10% + 昨日振幅≥7%」替代：候选池 3602 只/177 天（日内中位 18 只），按竞价额降序取 3（含竞价额≥500万）→ <b>448 只 / 168 天</b>，均 <b>+0.97%</b>、涨≥1.5% <b>41.7%</b>、胜率 53.1%、当日收盘 ≤-3% 占 <b>22.1%</b>。分半段 +1.36%(03~06) / +0.54%(07~11)。对照：保留「昨日涨停」硬条件时只有 74% 的交易日有票、均 +0.39%。</div></details>
+      <div class="note">口径：竞价涨幅 <b>-2.7%~+1.5%</b>（<b>不要求昨日涨停</b>）。硬条件：<b>昨日上影线 ≤2%</b>（昨日收在高位、没有冲高回落）+ 竞价额 ≥500 万 + 流通 ≤300 亿；竞价路径必须「<b>9:20→9:25 未被砸穿（≥-1.7%）</b>」且「9:15~9:20 虚拟量撤掉后回补（wdd≥0.5）」、尾盘跳水≥5pp 剔除。按<b>竞价涨幅升序</b>（越低开越优先）取 3 只。买点=9:25 集合竞价成交价（即开盘价），目标当日收盘。</div>
+      <details class="dtl"><summary>回测依据（177 个交易日 · 无前视）</summary><div>-2.7%~+1.5% 整段本身没有 alpha（均 -0.01%、涨≥1.5% 22.7%），必须叠昨日形态与竞价路径。当前口径（昨日上影线≤2% + 9:20→9:25≥-1.7% + wdd≥0.5 + 竞价额≥500万 + 流通≤300亿，按竞价涨幅升序取 3）→ <b>531 只 / 177 天</b>，均 <b>+0.54%</b>、涨≥1.5% <b>33.9%</b>、胜率 52.9%、当日收盘 ≤-3% 占 <b>13.9%</b>。分半段 +0.60%(03~06) / +0.48%(07~11)，全年 177 天全覆盖。对照：同样条件下按竞价额排序仅 +0.13%；不加「上影线」限制时按低开排序 +0.78% 但崩盘升到 17.9%。旧口径（近5日涨幅≥10%+昨日振幅≥7%）为 +0.97% / 崩 22.1%。</div></details>
     </div>
     <div class="group" id="gIntra">
       <div class="ghead"><span class="t-orange">T+1选股大涨 · 平开低吸</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
@@ -314,6 +314,7 @@ async function fetchIndustry(codes){ // 东财批量行业归属(f100)：一次�
    dd  = 9:20 后最高虚拟撮合价 → 9:25 成交价 的回落(pp)：9:20 后不可撤单，此时被砸下=抢筹撤离/大单出货
    wdd = 9:15~9:20 累计虚拟匹配量相对期间峰值的最大回撤（1=一路只增不减，0.7=被撤掉三成后又回补）
    rAll= 9:15 虚拟撮合价 → 9:25 成交价 的涨幅(%)：< -1 表示竞价一路被砸（破 9:15）
+   r20 = 9:20 虚拟撮合价 → 9:25 成交价 的涨幅(%)：最后 5 分钟（不可撤单段）是否续跌
    vAll= 9:25 虚拟匹配量 / 9:15（量能放大倍数）
    g20 = 9:25 虚拟匹配量 / 9:20（最后 5 分钟量能倍率，>2.5 视为末段爆量）
    hold= 6 个时点（9:15/18/20/22/24/25）中虚拟撮合价≥涨停-0.5pp 的个数
@@ -349,12 +350,13 @@ async function fetchAuctionDrop(codes){
       if(a&&a.p>0&&P925>0)o.rAll=(P925/a.p-1)*100;
       if(a&&a.q>0&&Q925>0)o.vAll=Q925/a.q;
       if(c20&&c20.q>0&&Q925>0)o.g20=Q925/c20.q;
+      if(c20&&c20.p>0&&P925>0){o.r20=(P925/c20.p-1)*100;}     // 9:20→9:25 涨幅（盈利版块用，低开区间的二次确认）
       if(a&&b&&a.q>0)o.vret=b.q/a.q;
       // ★保证金口径按「涨停价」算：prePrice*1.095（主板 10%），用 9.5% 容忍滑点
       let hold=((P925/dd.prePrice-1)*100>=9.5)?1:0;
       [900,1080,1200,1320,1440].forEach(sec=>{const x=near(sec); if(x&&(x.p/dd.prePrice-1)*100>=9.5)hold++;});
       o.hold=hold;
-      if(o.dd!=null||o.wdd!=null||o.rAll!=null||o.vAll!=null||o.g20!=null)out[c]=o;
+      if(o.dd!=null||o.wdd!=null||o.rAll!=null||o.r20!=null||o.vAll!=null||o.g20!=null)out[c]=o;
     }catch(e){}
   });
   return out;
@@ -435,10 +437,12 @@ function klineMetrics(kl){
   const ampY=(_pl&&_pc1>0&&+_pl.h>+_pl.l)?((+_pl.h-+_pl.l)/_pc1*100):null;
   const _lo20=(_pb.length>=20)?Math.min(..._pb.slice(-20).map(k=>(+k.l)||(+k.c)||0)):null;
   const pos20=(hi20!=null&&_lo20!=null&&hi20>_lo20&&_pl)?((+_pl.c-_lo20)/(hi20-_lo20)*100):null;
-  // ★5日涨幅（昨收 / 5个交易日前收，9:26 与回测同口径）：盈利版块「近一周强势」用，比 chg5 更稳（chg5 可能含今日）
+  // ★5日涨幅（昨收 / 5个交易日前收，9:26 与回测同口径）
   const chg5Y=(_pb.length>=6)?((_pb[_pb.length-1].c/_pb[_pb.length-6].c-1)*100):null;
+  // ★昨日上影线%（(昨高-昨收)/前日收盘）：盈利版块用，长上影＝昨日冲高失败、今日低开易被套
+  const shadowY=(_pl&&_pc1>0&&+_pl.h>+_pl.c)?((+_pl.h-+_pl.c)/_pc1*100):null;
   return {price:last.c, vr, vrY, ma5, ma10, chg5, chg5Y, chg10, lbc, vol:last.v, yestChg, intraday, hi20, hi60, posy,
-    ampY, pos20, broke5:last.c<ma5, broke10:last.c<ma10};
+    ampY, pos20, shadowY, broke5:last.c<ma5, broke10:last.c<ma10};
 }
 /* ★选股两关注（用户口径）：
    ①题材新鲜度 themeEval：今日/昨日涨停池的板块家数对比 → 新启动(今日成梯队、昨日没起来) > 主线延续 > 退潮
@@ -1001,18 +1005,18 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
   return _res;
 }
 /* ================== 盈利版块（9:26 竞价低开回踩，替代原「今日首板」位） ================== */
-// 口径：竞价涨幅 -2.7%~+1.5% 的低开/平开区，买「近 5 日强势、昨日有明显换手，今日低开但竞价没被砸穿」的票。
-//   "昨日涨停"已按要求不再作为硬性条件（只作为形态之一自然落入 c5/amp 条件，不加额外门槛）。
+// 口径：竞价涨幅 -2.7%~+1.5% 的低开/平开区，买「昨日没有长上影、今日低开后 9:20→9:25 没继续被砸」的票。
+//   "昨日涨停"与"5日涨幅/昨日振幅"均已按用户要求不作为条件（各自去掉）。
 //   买入价=9:25 集合竞价成交价（=开盘价），目标当日收盘。全部特征 9:26 前可得，无前视。
 // 177 个交易日无前视回测（20260302~20261118，468991 行竞价样本 × 3023 只日K）：
-//   ① -2.7%~+1.5% 整段本身没有 alpha（均 -0.01%、涨≥1.5% 22.7%），必须叠前几日形态与竞价路径；
-//   ② 竞价路径：rAll≥-1（9:15→9:25 没被砸穿）+ wdd≥0.5（9:15~9:20 虚拟量撤掉后回补）= 真实承接；
-//   ③ 前几日形态：5 日涨幅≥10%（近一周强势）+ 昨日振幅≥7%（昨天有换手、不是僵尸）最稳：
-//      候选池 3602 只/177 天（日内中位 18 只），按竞价额降序取 3（含竞价额≥500万门槛）→
-//      448 只/168 天（95% 的交易日有票），均 +0.97%、涨≥1.5% 41.7%、胜率 53.1%、崩盘(≤-3%) 22.1%；
-//      分半段 +1.36%(03~06) / +0.54%(07~11)。
-//   ④ 对照：保留「昨日涨停」硬条件时 284 只/131 天（74% 天）均 +0.39%（旧口径）；去掉后改用上述
-//      「强势+换手」替代，覆盖 74%→95% 天、均收益 +0.39%→+0.97% → 涨停不是必要前提。
+//   ① -2.7%~+1.5% 整段本身没有 alpha（均 -0.01%），必须叠形态与竞价路径；
+//   ② 昨日上影线（(昨高-昨收)/前收）≤2%：短上影 = 昨日收在高位、没有冲高回落，是最有效一条；
+//   ③ 9:20→9:25 跌幅 ≥-1.7%：9:20 后不可撤单，最后 5 分钟没再被砸 = 竞价承接真实；
+//   ④ wdd≥0.5（9:15~9:20 虚拟量撤掉后回补）+ 竞价额≥500万 + 流通≤300亿；
+//   ⑤ 排序用「竞价涨幅升序」（同样合格时越低开越优先），再按竞价额降序：
+//      531 只/177 天全覆盖，均 +0.54%、涨≥1.5% 33.9%、胜率 52.9%、崩盘(≤-3%) 13.9%；
+//      分半段 +0.60%(03~06) / +0.48%(07~11)，稳定但收益低于旧口径（旧：+0.97%）。
+//   对照（同样条件下按竞价额排序）：均仅 +0.13% → 低开幅度是这一组的主要区分度。
 function buildProfitPicks(cands, klines, drops, n){
   const out=[];
   (cands||[]).forEach(s=>{
@@ -1023,24 +1027,23 @@ function buildProfitPicks(cands, klines, drops, n){
     const og=pre?pre.og:((+s.open/+s.settlement-1)*100);
     if(!(og>=-2.7&&og<=1.5))return;                               // 竞价涨幅 -2.7%~+1.5%
     const au=drops[s.code]||null;
-    if(!au||au.rAll==null)return;                                 // 竞价路径必备（接口失败不出票）
-    if(au.rAll<-1)return;                                         // 9:15→9:25 跌幅 <1%（没被砸穿）
+    if(!au||au.r20==null)return;                                  // 竞价路径必备（接口失败不出票）
+    if(au.r20<-1.7)return;                                        // 9:20→9:25 跌幅 <1.7%（最后5分钟没被砸）
     if(au.wdd==null||au.wdd<0.5)return;                           // 9:15~9:20 有撤单再回补（真实承接）
-    if(au.dd!=null&&au.dd>=5)return;                              // 尾盘 9:20→9:25 跳水≥5pp 剔除
-    const c5=(km.chg5Y!=null?km.chg5Y:km.chg5), amp=km.ampY;
-    if(c5==null||c5<10)return;                                    // 近 5 日涨幅≥10%（近一周强势）
-    if(amp==null||amp<7)return;                                   // 昨日振幅≥7%（有换手，不是一字/僵尸）
+    if(au.dd!=null&&au.dd>=5)return;                              // 尾盘跳水≥5pp 剔除
+    const sh=km.shadowY;
+    if(sh==null||sh>2)return;                                     // 昨日上影线≤2%（不要长上影）
     const fmc=(+s.nmc||0)/1e4;
     if(!(fmc>0&&fmc<=300))return;                                 // 流通≤300亿
     const amtR=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
     const aucAmt=pre?pre.aucAmt:(amtR*fmc*100);                    // 竞价额(万元)
     if(aucAmt<500)return;                                         // 竞价额≥500万（防僵尸小票）
-    out.push({s,og,aucAmt,c5,amp,au});
+    out.push({s,og,aucAmt,sh,au});
   });
-  // 排序：竞价额降序（资金真实关注度；等价于回测里的竞价量降序，差异 <0.1pp）
-  out.sort((a,b)=>(b.aucAmt-a.aucAmt)||((b.au.wdd||0)-(a.au.wdd||0)));
+  // 排序：竞价涨幅升序（越低开越优先）→ 竞价额降序
+  out.sort((a,b)=>(a.og-b.og)||(b.aucAmt-a.aucAmt));
   return out.slice(0,n||3).map(x=>{
-    x.s._pf={og:x.og,aucAmt:x.aucAmt,c5:x.c5,amp:x.amp,path:x.au};
+    x.s._pf={og:x.og,aucAmt:x.aucAmt,shadow:x.sh,path:x.au};
     return x.s;
   });
 }
@@ -1116,11 +1119,11 @@ function profitCard(p, rank, km){
   const pctNum=+p.changepercent||0, up=pctNum>=0;
   const f=p._pf||{}, au=f.path||{};
   const og=f.og!=null?f.og:((+p.open&&+p.settlement)?((+p.open/+p.settlement-1)*100):0);
-  const aucAmt=f.aucAmt||0, amp=f.amp, c5=f.c5;
+  const aucAmt=f.aucAmt||0, sh=f.shadow;
   const _n=(v,d)=>(v!=null&&isFinite(v))?(v>=0?'+':'')+v.toFixed(d):'—';
-  const mainTag=`<span class="rtag ok">近5日强势 ${_n(c5,1)}% · 昨日换手（振幅 ${amp!=null?amp.toFixed(1):'—'}%）· 今日竞价低开 ${_n(og,2)}%</span>`;
+  const mainTag=`<span class="rtag ok">昨日上影线 ${sh!=null?sh.toFixed(1)+'%':'—'}（无长上影） · 今日竞价低开 ${_n(og,2)}%</span>`;
   const pathTag=(au.wdd!=null?`<span class="rtag ${au.wdd>=0.5?'ok':'mute'}">竞价撤单回补 ${au.wdd.toFixed(2)}</span>`:'')
-    +(au.rAll!=null?`<span class="rtag ${au.rAll>=-1?'ok':'warn'}">9:15→9:25 ${_n(au.rAll,2)}%</span>`:'');
+    +(au.r20!=null?`<span class="rtag ${au.r20>=-1.7?'ok':'warn'}">9:20→9:25 ${_n(au.r20,2)}%</span>`:'');
   const volTag=(au.vAll!=null?`<span class="rtag info">竞价量能 ${au.vAll.toFixed(2)}×</span>`:'')
     +(au.g20!=null?`<span class="rtag mute">末5分钟量能 ${au.g20.toFixed(2)}×</span>`:'');
   return `<div class="pick">
@@ -1132,17 +1135,16 @@ function profitCard(p, rank, km){
     <div class="bestrows">
       <div class="br"><div class="k">竞价涨幅</div><div class="v" style="color:${og<0?'var(--green)':'var(--red)'}">${_n(og,2)}%</div></div>
       <div class="br"><div class="k">竞价额</div><div class="v">${aucAmt>0?aucAmt.toFixed(0)+'万':'—'}</div></div>
-      ${km?`<div class="br"><div class="k">5日涨幅</div><div class="v" style="color:${(c5!=null&&c5>=10)?'var(--red)':'var(--text)'}">${_n(c5,1)}%</div></div>`:''}
-      ${km?`<div class="br"><div class="k">昨日振幅</div><div class="v" style="color:${(amp!=null&&amp>=7)?'var(--red)':'var(--text)'}">${amp!=null?amp.toFixed(1)+'%':'—'}</div></div>`:''}
+      ${km?`<div class="br"><div class="k">昨日上影线</div><div class="v" style="color:${(sh!=null&&sh<=2)?'var(--red)':'var(--text)'}">${sh!=null?sh.toFixed(1)+'%':'—'}</div></div>`:''}
       ${km?`<div class="br"><div class="k">昨日连板</div><div class="v">${km.lbc||0} 板</div></div>`:''}
       ${km?`<div class="br"><div class="k">20日位置</div><div class="v">${km.pos20!=null?km.pos20.toFixed(0)+'%':'—'}</div></div>`:''}
       ${p.flow?`<div class="br"><div class="k">主力净流入</div><div class="v">${(p.flow>0?'+':'')+(p.flow/1e8).toFixed(2)+'亿'}</div></div>`:''}
     </div>
-    <div class="why">逻辑：近 5 日已涨 <b>${_n(c5,1)}%</b>（强势不破），昨日振幅 <b>${amp!=null?amp.toFixed(1):'—'}%</b>（有真实换手），
-      今日竞价<b>低开/平开 ${_n(og,2)}%</b>（区间 -2.7%~+1.5%）回踩；9:15→9:25 未被砸穿 <b>${_n(au.rAll,2)}%</b>、
+    <div class="why">逻辑：昨日收在<b>高位、无长上影</b>（上影线 <b>${sh!=null?sh.toFixed(1)+'%':'—'}</b>，≤2%），
+      今日竞价<b>低开/平开 ${_n(og,2)}%</b>（区间 -2.7%~+1.5%）回踩；9:20→9:25 未再被砸 <b>${_n(au.r20,2)}%</b>（≥-1.7%）、
       9:15~9:20 虚拟量撤掉后回补到 <b>${au.wdd!=null?au.wdd.toFixed(2):'—'}</b>，属「洗盘回踩」而非「出货低开」。
       买点=9:25 集合竞价成交价（开盘价），目标当日收盘；当日收盘 ≤-3% 视为失败。</div>
-    <div class="why" style="color:#991b1b">⚠ 177 日无前视：本组 3 只均 +0.97%、涨≥1.5% 41.7%、崩盘 22.1%，不是稳赚，须按纪律止损。</div>
+    <div class="why" style="color:#991b1b">⚠ 177 日无前视：本组 3 只均 +0.54%、涨≥1.5% 33.9%、崩盘 13.9%（旧口径 +0.97%/崩 22.1%），收益下降但崩盘率更低，须按纪律止损。</div>
   </div>`;
 }
 
@@ -1507,7 +1509,7 @@ async function run(){
     if(auctionPicks.length&&!auctionPicks.some(p=>p._rk===1))
       $('#pAuction').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">今日无合格首选票 · <b>首选空仓</b>；下方为<b>备选</b>（近200日：备选74天 封板60.8%、合计139天 67.6%）。<details class="dtl"><summary>首选四档 / 备选十层规则</summary><div><b>首选</b>（任一档）：<b>①首板档</b> 昨日首板 + 10日涨幅15%~45% + 竞价换手≥0.70% + 竞价额≥1500万 + 市值≤80亿；<b>②二连板档</b> 昨日2连板 + 高开4.3%~5.7% + 竞价换手≥1.2% + 市值40~80亿；<b>③高位连板档</b> 昨日≥3连板 + 竞价换手≥0.70% + 竞价额≥3000万；<b>④高置信档</b> 10日涨幅35%~45% + 竞价换手≥0.35% + 高开≤5.3% + 昨量比≥0.7。<br><b>备选</b>（首选空仓日按序取，同层取综合分最高）：①L1温和高开承接 2.4%~3.7% + 换手≥1.0% + 额≥2000万 + 开盘贴60日高≥-3% + 市值≤110亿（35天 60.0%）；②缩量二板 昨2连板 + 昨量比&lt;1.0 + 高开4.3%~5.7% + 换手≥1.0% + 额≥2000万（11样本 90.9%）；③量比爆发 昨非连板 + 10日涨幅0~30% + 高开3.7%~5.7% + 换手≥0.35% + 量比≥2.0（31天 64.5%）；④未涨停补涨 昨未涨停 + 10日涨幅10%~45% + 高开4.0%~5.7% + 换手≥0.35% + 量比≥1.0 + 市值≤80亿（19天 57.9%）；⑤A高开有板 昨1~2连板 + 高开4.5%~5.7% + 换手≥0.25% + 额≥1000万（27天 59.3%）；⑥C大额低位 昨非连板 + 10日涨幅≤30% + 高开4.0%~5.7% + 换手≥0.25% + 额≥3000万（10天 40.0%）；⑦D二板量比 昨2连板 + 10日涨幅≤30% + 高开3.7%~5.7% + 换手≥0.25% + 量比≥1.5（4天 50.0%）；⑧H1 5.7%~6.3% + 换手≥1.5% + 市值≤110亿（14天 92.9%）；⑨H2 5.7%~7.2% + 换手≥1.5% + 昨收在振幅上沿≥90%（9天 77.8%）；⑩H3 6.9%~7.7% + 额≥5000万 + 开盘低于20日高≥3%（16天 81.2%）。<br>入池前提：高开2.4%~7.7%、竞价换手≥0.25%、市值≤110亿。</div></details></div>');
     $('#cProfit').textContent=profitPicks.length+' / 3';
-    $('#pProfit').innerHTML=profitPicks.length?profitPicks.map((p,i)=>profitCard(p,i+1,fbKlines[p.code])).join(''):'<div class="empty">今日<b>无盈利版块候选</b>：需同时满足「竞价 -2.7%~+1.5% + 近5日涨幅≥10% + 昨日振幅≥7% + 9:15→9:25 未破位（≥-1%）+ 9:15~9:20 撤单回补 wdd≥0.5 + 竞价额≥500万」。<br>177 日回测里 95% 的交易日有票（448 只/168 天），出现空仓多半是竞价路径接口取数失败或不在 9:26 时点。</div>';
+    $('#pProfit').innerHTML=profitPicks.length?profitPicks.map((p,i)=>profitCard(p,i+1,fbKlines[p.code])).join(''):'<div class="empty">今日<b>无盈利版块候选</b>：需同时满足「竞价 -2.7%~+1.5% + 昨日上影线≤2% + 9:20→9:25 未破位（≥-1.7%）+ 9:15~9:20 撤单回补 wdd≥0.5 + 竞价额≥500万」。<br>177 日回测里几乎每天有票（531 只/177 天），出现空仓多半是竞价路径接口取数失败或不在 9:26 时点。</div>';
     if(_fbLive)$('#pProfit').insertAdjacentHTML('afterbegin','<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">当前不是 9:26 竞价时点，且本地没有当日锁定的候选池 → 下方名单按<b>盘中累计换手/成交额</b>重算，仅作回看，不等于 9:26 的候选。</div>');
     $('#cIntra').textContent=intraPicks.length+' / '+nIntraE;
     $('#pIntra').innerHTML=intraPicks.length?intraPicks.map((p,i)=>intraCard(p,i+1,klines[p.code])).join(''):'<div class="empty">暂无符合条件的T+1大涨票（需平开/微高开0~3%、未涨停、换手≥1% 且无炸板）</div>';
@@ -1542,7 +1544,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（选股时刻→收盘仍有望大涨，非涨停）+ <b>竞价强势</b>（首选=首板档/二连板档/高位连板档/高置信档任一命中，取综合分最高者；备选=仅在首选空仓日按 L1温和高开承接档（2.4%~3.7%）→ 缩量二板档 → b1/b2 → A高开有板档 → C大额低位档 → D二板量比档 → H1/H2/H3 高开承接档（5.7%~7.7%） 十层依次命中其一，都不中则当日空仓） + <b>${$('#nIntra').value||2}只T+1选股大涨</b>（平开低吸+5日强势，剔除昨日涨停）+ <b>3只盈利版块</b>（竞价 -2.7%~+1.5%，<b>不要求昨日涨停</b>；要求近5日涨幅≥10%、昨日振幅≥7%、9:15→9:25 未破位、9:15~9:20 撤单回补 wdd≥0.5，按竞价额降序取 3 只；177 日无前视：448 只/168 天 均 +0.97%、涨≥1.5% 41.7%、崩盘 22.1%）。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（选股时刻→收盘仍有望大涨，非涨停）+ <b>竞价强势</b>（首选=首板档/二连板档/高位连板档/高置信档任一命中，取综合分最高者；备选=仅在首选空仓日按 L1温和高开承接档（2.4%~3.7%）→ 缩量二板档 → b1/b2 → A高开有板档 → C大额低位档 → D二板量比档 → H1/H2/H3 高开承接档（5.7%~7.7%） 十层依次命中其一，都不中则当日空仓） + <b>${$('#nIntra').value||2}只T+1选股大涨</b>（平开低吸+5日强势，剔除昨日涨停）+ <b>3只盈利版块</b>（竞价 -2.7%~+1.5%，<b>不要求昨日涨停</b>；要求昨日上影线≤2%、9:20→9:25 未破位≥-1.7%、9:15~9:20 撤单回补 wdd≥0.5、竞价额≥500万、流通≤300亿，按竞价涨幅升序取 3 只；177 日无前视：531 只/177 天 均 +0.54%、涨≥1.5% 33.9%、崩盘 13.9%）。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
