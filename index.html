@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 14:24</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 14:40</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-19 14:24</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-19 14:40</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -153,8 +153,8 @@
     <div class="group" id="gV5">
       <div class="ghead"><span class="t-blue">v5-Top3 竞价选股</span><span class="tagc blue" id="cV5">0 / 3</span></div>
       <div class="picks" id="pV5"><div class="empty">等待运行</div></div>
-      <div class="note">口径（GitHub jingjia-stock-selector v5-Top3）：昨日涨停（连板 1~3）池内，按「流通市值 + 竞价换手 + 开幅 + 连板高度 + 竞价形态」打分（板块热度缺失按中性 4 分），原始分×4 − 风险扣分，≥16 分入选，取前 3。竞价额 ≥300 万、流通 ≥20 亿、开幅 ≥-3%。买点=9:25 集合竞价成交价，目标当日收盘。</div>
-      <details class="dtl"><summary>回测依据（427 个交易日 · 无前视）</summary><div><b>⚠ 本地 427 日：1127 只/418 天，均 -2.11%、涨≥1.5% 仅 15.1%、崩盘 29.5%、胜率 25.9%，前后半段 -2.12%/-2.10%。</b>原仓库宣称的「18 天 80.6% 胜率 / 均 +4.56%」无法复现：其关键输入封单比、开板次数、最后封板时间、板块热度我们没有历史数据（板块项固定中性 4 分），且 18 天样本本身极易过拟合。此版块仅按你的要求保留展示，<b>不建议实盘</b>。</div></details>
+      <div class="note">口径（GitHub jingjia-stock-selector v5-Top3）：昨日涨停（连板 1~3）池内，按「流通市值 + 竞价换手 + 开幅 + 连板高度 + 竞价形态」打分（板块热度缺失按中性 4 分），原始分×4 − 风险扣分，≥16 分入选，取前 3。<b>开幅 -3%~+7.7%</b>（高开&gt;7.7% 不选）、<b>9:20→9:25 回落 ≤4.7%</b>（超过不选）、竞价额 ≥300 万、流通 ≥20 亿。买点=9:25 集合竞价成交价，目标当日收盘。</div>
+      <details class="dtl"><summary>回测依据（427 个交易日 · 无前视）</summary><div><b>⚠ 本地 427 日（含开幅≤7.7% 闸）：532 只/314 天，均 -1.59%、涨≥1.5% 47.9%、崩盘 40.2%、胜率 50.4%，前后半段 -1.67%/-1.51%；不加开幅闸为 1127 只/418 天 均 -2.11%。</b>下跌落闸仅提升到 -1.59%，仍为负期望；原仓库宣称的「18 天 80.6% 胜率 / 均 +4.56%」无法复现：其关键输入封单比、开板次数、最后封板时间、板块热度我们没有历史数据（板块项固定中性 4 分），且 18 天样本本身极易过拟合。「9:20→9:25 回落≤4.7%」无历史分钟虚拟价，未能回测。此版块仅按你的要求保留展示，<b>不建议实盘</b>。</div></details>
     </div>
     <div class="group" id="gIntra">
       <div class="ghead"><span class="t-orange">T+1选股大涨 · 平开低吸</span><span class="tagc orange" id="cIntra">0 / 2</span></div>
@@ -1044,7 +1044,8 @@ function buildGolden5(cands, klines, drops, n){
 /* ================== v5-Top3 竞价选股（GitHub jingjia-stock-selector） ================== */
 // 原版评分：a 流通市值+竞价换手 / b 开幅 / c 连板 / d 板块热度(缺数据固定4) / e 竞价形态；
 //   raw = a*.25+b*.20+c*.15+d*.20+e*.20，score = raw*4 - 风险扣分，≥16 分入选，取分数前 3。
-// 427 日本地无前视：1127 只/418 天，均 -2.11%、涨≥1.5% 15.1%、崩盘 29.5%（原仓库 18 天 80.6% 无法复现）。
+// 本地追加两道闸：高开>7.7% 不选、9:20→9:25 回落>4.7% 不选。
+// 427 日无前视（只含开幅闸）：532 只/314 天，均 -1.59%、涨≥1.5% 47.9%、崩盘 40.2%、胜率 50.4%（不含闸时 1127 只/418 天 均 -2.11%）。
 function buildV5Top3(cands, klines, drops, n){
   const out=[];
   (cands||[]).forEach(s=>{
@@ -1054,6 +1055,7 @@ function buildV5Top3(cands, klines, drops, n){
     const pre=s._fbPre||null;
     const og=pre?pre.og:((+s.open/+s.settlement-1)*100);
     if(og<-3)return;                                               // 开幅 ≥-3%
+    if(og>7.7)return;                                              // 高开>7.7% 不选
     const fmc=(+s.nmc||0)/1e4;
     if(!(fmc>=20))return;                                          // 流通≥20亿
     const amtR=(pre&&pre.amtR!=null)?pre.amtR:((+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0));
@@ -1076,7 +1078,9 @@ function buildV5Top3(cands, klines, drops, n){
     const risk=(lt>=4?2:0)+((lt>=3&&gap<2)?1:0)+(mv>=500?-1:0)+((mv>=200&&mv<500)?-.5:0);
     const score=(a*.25+b*.20+c*.15+d*.20+e*.20)*4-risk;
     if(score<16)return;
-    out.push({s,og,aucAmt,amtR,score,lt,au:drops[s.code]||null});
+    const au=drops[s.code]||null;
+    if(au&&au.dd!=null&&au.dd>4.7)return;                          // 9:20→9:25 回落>4.7% 不选
+    out.push({s,og,aucAmt,amtR,score,lt,au});
   });
   out.sort((a,b)=>b.score-a.score);
   return out.slice(0,n||3).map(x=>{
@@ -1208,7 +1212,7 @@ function v5Card(p, rank, km){
     </div>
     <div class="why">逻辑：<b>v5-Top3</b>——昨日涨停（${lt} 板）池内，按流通市值+竞价换手(a)、开幅(b)、连板高度(c)、板块热度(d，缺数据按 4 分)、竞价形态(e) 加权，
       原始分×4 − 风险扣分 = <b>${score!=null?score.toFixed(1):'—'}</b>（≥16 入选），取分数前 3。</div>
-    <div class="why" style="color:#991b1b">⚠ 427 日无前视：1127 只/418 天 均 <b>-2.11%</b>、涨≥1.5% 15.1%、崩盘 29.5%，原仓库 80.6% 胜率无法复现，不建议实盘。</div>
+    <div class="why" style="color:#991b1b">⚠ 427 日无前视（含开幅≤7.7% 闸）：532 只/314 天 均 <b>-1.59%</b>、涨≥1.5% 47.9%、崩盘 40.2%，原仓库 80.6% 胜率无法复现，不建议实盘。</div>
   </div>`;
 }
 
@@ -1586,7 +1590,7 @@ async function run(){
     $('#cG5').textContent=g5Picks.length+' / 3';
     $('#pG5').innerHTML=g5Picks.length?g5Picks.map((p,i)=>goldenCard(p,i+1,fbKlines[p.code])).join(''):'<div class="empty">今日<b>无黄金5分钟候选</b>：需「竞价 0%~8% + 竞价换手&gt;0.25% + 9:15→9:25 量能&gt;2.5× + 竞价额≥300万 + 流通≤300亿 + 尾盘跳水&lt;4pp」。<br>该档约 25/177 天无票，空仓属正常；若长期无票多为竞价量能接口取数失败或不在 9:26 时点。</div>';
     $('#cV5').textContent=v5Picks.length+' / 3';
-    $('#pV5').innerHTML=v5Picks.length?v5Picks.map((p,i)=>v5Card(p,i+1,fbKlines[p.code])).join(''):'<div class="empty">今日<b>无 v5-Top3 候选</b>：需「昨日涨停（连板 1~3）+ 竞价开幅≥-3% + 竞价换手≥0.05% + 竞价额≥300万 + 流通≥20亿 + 评分≥16」。<br>427 日回测该策略均 -2.11%、崩盘 29.5%，空仓反而是好事，请谨慎参考。</div>';
+    $('#pV5').innerHTML=v5Picks.length?v5Picks.map((p,i)=>v5Card(p,i+1,fbKlines[p.code])).join(''):'<div class="empty">今日<b>无 v5-Top3 候选</b>：需「昨日涨停（连板 1~3）+ 竞价开幅 -3%~+7.7% + 9:20→9:25 回落≤4.7% + 竞价换手≥0.05% + 竞价额≥300万 + 流通≥20亿 + 评分≥16」。<br>427 日回测（含开幅闸）均 -1.59%、崩盘 40.2%，空仓反而是好事，请谨慎参考。</div>';
     if(_fbLive){
       const _w='<div class="empty" style="color:var(--orange);border-bottom:1px dashed var(--orange)">当前不是 9:26 竞价时点，且本地没有当日锁定的候选池 → 下方名单按<b>盘中累计换手/成交额</b>重算，仅作回看，不等于 9:26 的候选。</div>';
       $('#pG5').insertAdjacentHTML('afterbegin',_w);
@@ -1625,7 +1629,7 @@ async function run(){
 function guideText(){
   return `<div style="font-size:12.5px;line-height:1.9;color:#374151">
     <p><b>选股范围：</b>严格 A股<b>主板</b>（600/601/603/605 沪主板，000/001/002 深主板），<b>已排除</b> 科创板(688/689)、创业板(300/301)、北交所(8xx/4xx/92x)。涨停识别按主板涨跌幅限制（ST=5%、普通=10%）。</p>
-    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（选股时刻→收盘仍有望大涨，非涨停）+ <b>竞价强势</b>（首选=首板档/二连板档/高位连板档/高置信档任一命中，取综合分最高者；备选=仅在首选空仓日按 L1温和高开承接档（2.4%~3.7%）→ 缩量二板档 → b1/b2 → A高开有板档 → C大额低位档 → D二板量比档 → H1/H2/H3 高开承接档（5.7%~7.7%） 十层依次命中其一，都不中则当日空仓） + <b>${$('#nIntra').value||2}只T+1选股大涨</b>（平开低吸+5日强势，剔除昨日涨停）+ <b>3只黄金5分钟（竞价放量）</b>（竞价0%~8% + 竞价换手&gt;0.25% + 9:15→9:25 量能&gt;2.5× + 竞价额≥300万 + 流通≤300亿 + 尾盘跳水&lt;4pp，按竞价涨幅升序；177 日无前视 310只/152天 均 +0.79%、涨≥1.5% 40.6%、崩盘 20.6%） + <b>3只v5-Top3 竞价选股</b>（GitHub jingjia-stock-selector：昨涨停 + 流通市值/竞价换手/开幅/连板/竞价形态评分≥16 取前3；<b>427 日无前视 均 -2.11%、崩盘 29.5%，原仓库 80.6% 无法复现，不建议实盘</b>）。</p>
+    <p><b>构成：</b>本次选股 = <b>${$('#nTrend').value||2}只当日大涨</b>（选股时刻→收盘仍有望大涨，非涨停）+ <b>竞价强势</b>（首选=首板档/二连板档/高位连板档/高置信档任一命中，取综合分最高者；备选=仅在首选空仓日按 L1温和高开承接档（2.4%~3.7%）→ 缩量二板档 → b1/b2 → A高开有板档 → C大额低位档 → D二板量比档 → H1/H2/H3 高开承接档（5.7%~7.7%） 十层依次命中其一，都不中则当日空仓） + <b>${$('#nIntra').value||2}只T+1选股大涨</b>（平开低吸+5日强势，剔除昨日涨停）+ <b>3只黄金5分钟（竞价放量）</b>（竞价0%~8% + 竞价换手&gt;0.25% + 9:15→9:25 量能&gt;2.5× + 竞价额≥300万 + 流通≤300亿 + 尾盘跳水&lt;4pp，按竞价涨幅升序；177 日无前视 310只/152天 均 +0.79%、涨≥1.5% 40.6%、崩盘 20.6%） + <b>3只v5-Top3 竞价选股</b>（GitHub jingjia-stock-selector：昨涨停 + 流通市值/竞价换手/开幅/连板/竞价形态评分≥16 取前3；<b>开幅 -3%~+7.7%、9:20→9:25 回落≤4.7%</b>；<b>427 日无前视（含开幅闸）均 -1.59%、崩盘 40.2%，原仓库 80.6% 无法复现，不建议实盘</b>）。</p>
     <p><b>基础上游法则（本教程/指南）：</b></p>
     <ul style="margin-left:18px;list-style:disc">
       <li>专注<b>涨停→连板→板块龙头</b>：买板块大哥、用连板高度定龙头（课程09/13）。</li>
