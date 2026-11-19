@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 15:46</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 16:13</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-19 15:46</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-19 16:13</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,7 +136,7 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
-      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。</div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。<br><b>竞价承接</b>：<b>竞价换手 &lt;1.03%</b> 直接剔除（20 日复盘：闸前 20 只 均 -0.23%/崩 45%，闸后 16 只 均 +1.82%/崩 25%）。</div>
     </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
@@ -931,7 +931,8 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     // ★旧版「lbc≥4 一律剔除 / lbc=2 且换手≥1.5% 剔除」已取消（148日口径曾把首选压到 38天81.6%）：
     //   270日重测显示，高位板只要 竞价换手≥0.70% + 竞价额≥3000万 封板仍有 69.8%（43天），是补足"≥80天有票"的关键；
     //   改为「①首板档 / ②二连板档(高开≥4.3%) / ③高位连板档」分档控制，见上方 tier 定义。
-    const trapBase=((openGap<2.4||(openGap<3.7&&bxL===0))||(openGap>5.7&&(openGap>7.7||(bxH===0&&!nBand)))||amtR<0.25||(fmc>0&&fmc>110)||(!hiGapBand&&gapHiBlock));
+    //   amtR<1.03%(竞价承接不足)与 fmc>110亿(大盘股弹性不足)同样硬剔。
+    const trapBase=((openGap<2.4||(openGap<3.7&&bxL===0))||(openGap>5.7&&(openGap>7.7||(bxH===0&&!nBand)))||amtR<1.03||(fmc>0&&fmc>110)||(!hiGapBand&&gapHiBlock));
     return {sc, openGap, vr, amtR, tier, bx, bxA, bxC, bxD, bxH, bxL, bxS, bxN:nBand?1:0, c10, aucAmt,
       trap:(trapBase||(!qual&&!hiGapBand&&bxL===0&&bxS===0&&noVolTrap)), weak:(!km&&openGap>2.5&&noKdata)};
   };
