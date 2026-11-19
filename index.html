@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 15:19</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 15:27</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-19 15:19</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-19 15:27</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,7 +136,7 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
-      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。</div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板不选</b>：昨日涨停票若<b>封单比&lt;1.7%</b>或<b>开板≥3次</b>，今日直接剔除（8 日代理回测，高开 2.4%~7.7% 子集：涨≥1.5% 41.9%→52.6%、胜率 48.4%→52.6%，均收益基本持平）。</div>
     </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
@@ -757,7 +757,7 @@ function themeEval(code, secToday, secPrev, ztMap, prevMap, hasPrev, indMap){ //
    故：①高开上限收到8%（开盘即顶硬剔）；②排序键由"竞价换手率单键"改为综合分（高开甜点+竞价资金+动量+量能），
    amtR 封顶2.5%并入评分——单一 amtR 排序会把"竞价巨量=高位分歧"的票直接顶到第一（2026-11 连续三日推荐
    锡华科技/皇台酒业/扬子新材均属此列）；③昨跌>5%、chg5>30% 不再奖励。 */
-function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap, drops){
+function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap, drops, prevMap){
   flows=flows||{};
   if(!(hotSector instanceof Set))hotSector=new Set();
   // 盘中炸板硬剔除（实时口径，不依赖涨停池zbc）：盘中最高已触及涨停、但当前已跌破涨停(炸板未回封)的票，一律剔除。
@@ -770,6 +770,18 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     if(touchedZT&&nowBroken)return false;                                // 盘中炸板未回封 → 剔除
     return true;
   });
+  // ★昨日弱板不选：昨日涨停票若「封单比<1.7%」或「开板≥3次」，次日直接剔除（弱板高开多为溢价兑现）
+  //   数据来自昨日涨停池（fund 封板资金 / ltsz 流通市值 / zbc 炸板次数），9:26 前已固定，无前视
+  if(prevMap instanceof Map){
+    cands=cands.filter(s=>{
+      const z=prevMap.get(s.code)||prevMap.get(+s.code);
+      if(!z)return true;                                        // 昨日未涨停 → 不受此闸影响
+      const seal=(+z.fund>0&&+z.ltsz>0)?(+z.fund/+z.ltsz*100):null;
+      if(seal!=null&&seal<1.7)return false;
+      if((+z.zbc||0)>=3)return false;
+      return true;
+    });
+  }
   cands.forEach(s=>{ delete s._rk; delete s._noHi; delete s._std; delete s._tier; delete s._bx; }); // 每轮重置排序标记，避免上一轮标记残留（stocks 对象复用）
   const score=(s)=>{
     const km=klines[s.code]; const flow=flows[s.code]||0;
@@ -1545,7 +1557,7 @@ async function run(){
     if(_cutA+_cutF)src.push('<li><span class="bad">✗</span> 竞价尾盘跳水≥5pp 剔除 <b>'+(_cutA+_cutF)+'</b> 只（选票前剔除）</li>');
     // ★先去重再选：当日大涨与竞价·强势口径有交集（竞价高开4%以上且当前涨幅仍在0.5~7%），
     //   竞价模块已选的票从当日大涨候选里剔除，避免同一只票在两个卡片重复出现（名额顺延给下一名）
-    let auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE+3, ztMap, _drops);
+    let auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE+3, ztMap, _drops, prevMap);
     // 黄金5分钟（竞价放量）：开0~8% + 竞价换手>0.25% + 9:15→9:25 量能>2.5×
     let g5Picks=buildGolden5(fbShort, fbKlines, _drops, 3);
     g5Picks.forEach(p=>{const f=flows[p.code]; if(f)p.flow=f;});
