@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 15:34</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 15:44</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-19 15:34</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-19 15:44</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,7 +136,7 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
-      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板不选</b>：昨日涨停票若<b>封单比&lt;1.35%</b>或<b>开板≥3次</b>，今日直接剔除（有效样本有限：11/10~11/11 真实竞价换手口径，闸前均 -0.32% / 闸后 -0.90%；8 日代理口径闸前 -0.91% / 闸后 -0.19%，样本均不足 20 只）。</div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板处理</b>：昨日<b>开板≥3次</b>的票直接剔除；<b>封单比不剔除、改为综合分排序加分</b>——甜点区 <b>1%~2% 加 6 分</b>，&lt;1% 减 2 分，2%~3% 减 4 分，≥3% 减 8 分（14 日 43 样本实测：1~2% 均 +0.74%、&lt;1% 均 -0.88%、≥2% 均 -4.60%，厚封多为兑现型）。</div>
     </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
@@ -770,14 +770,12 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     if(touchedZT&&nowBroken)return false;                                // 盘中炸板未回封 → 剔除
     return true;
   });
-  // ★昨日弱板不选：昨日涨停票若「封单比<1.35%」或「开板≥3次」，次日直接剔除（弱板高开多为溢价兑现）
+  // ★昨日开板≥3次仍剔除（反复炸板的弱板）；「封单比」不再剔除，改作综合分加分项（见 score）
   //   数据来自昨日涨停池（fund 封板资金 / ltsz 流通市值 / zbc 炸板次数），9:26 前已固定，无前视
   if(prevMap instanceof Map){
     cands=cands.filter(s=>{
       const z=prevMap.get(s.code)||prevMap.get(+s.code);
       if(!z)return true;                                        // 昨日未涨停 → 不受此闸影响
-      const seal=(+z.fund>0&&+z.ltsz>0)?(+z.fund/+z.ltsz*100):null;
-      if(seal!=null&&seal<1.35)return false;
       if((+z.zbc||0)>=3)return false;
       return true;
     });
@@ -899,6 +897,14 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     else if(km&&km.chg5>=45)sc-=10*aw.chg5;
     if(km&&km.ma5>km.ma10)sc+=4; // 均线多头加分（封板组多头率46% vs 非封板37%）
     if(km&&km.yestChg>=lim*0.97)sc+=8*aw.yestZt; // 昨日涨停→今日高开接力（回测：昨涨停组封板44%/开→高3.06%）
+    // ★昨日封单比（封板资金/流通市值）作排序加分、不剔除。14 日 43 样本（本地 9:15~9:26 快照+昨涨停池）实测非单调：
+    //   1%~2% 最稳（n=16 均+0.74%）；<1% 偏弱（n=12 -0.88%）；≥2% 反而最差（n=15 -4.60%，厚封多为一字/兑现）
+    const _pz=prevMap&&(prevMap.get(s.code)||prevMap.get(+s.code));
+    const _seal=(_pz&&+_pz.fund>0&&+_pz.ltsz>0)?(+_pz.fund/+_pz.ltsz*100):null;
+    if(_seal!=null){
+      sc+=(_seal>=1&&_seal<2)?6:(_seal<1?-2:(_seal>=3?-8:-4));   // 甜点区 1~2% 加分，越厚越降权
+      s._seal=_seal;
+    }
     if(km&&km.yestChg<-5)sc-=18; // ★昨跌>5%的高开=接刀反抽（回测封板16%/炸板31%/开→收-1.90%）
     if(flow>0)sc+=Math.min(flow/5e8,1)*10*aw.flow; // 主力净流入
     if(hot)sc+=10*aw.hot; // 热门板块加分
@@ -1138,6 +1144,8 @@ function auctionCard(p, rank, km){
   else if(p._bx===7)warn.push('<span class="rtag info">备选·高开承接H2（竞价涨幅5.7%~7.2%+竞价换手≥1.5%+昨日收盘在当日振幅上沿≥90%+市值≤110亿；近200日 追补9天 封板77.8%）</span>');
   else if(p._bx===8)warn.push('<span class="rtag info">备选·高开承接H3（竞价涨幅6.9%~7.7%+竞价额≥5000万+开盘仍低于20日高点≥3%+市值≤110亿；近200日 追补16天 封板81.2%）</span>');
   else if(p._bx===11)warn.push('<span class="rtag info">备选·N首板温和承接（昨日首板+竞价涨幅5.7%~7.0%+竞价换手≥0.5%+市值≤110亿；270日空仓日 41天 封板55.1%）</span>');
+  if(p._seal!=null){ const _sb=(p._seal>=1&&p._seal<2)?6:(p._seal<1?-2:(p._seal>=3?-8:-4));
+    warn.push('<span class="rtag '+(_sb>0?'ok':(_sb<-4?'danger':'warn'))+'">昨日封单比 '+p._seal.toFixed(2)+'%（综合分 '+(_sb>0?'+':'')+_sb+'）</span>'); }
   if(p._tier===4)warn.push('<span class="rtag ok">高置信·昨日首板+10日涨幅35%~45%+竞价换手≥0.35%+高开≤5.3%+昨量比≥0.7（270日 8天 封板100%）</span>');
   else if(p._tier===1)warn.push('<span class="rtag info">首板档·昨日首板+10日涨幅15%~45%+竞价换手≥0.70%+竞价额≥1500万+市值≤80亿（270日 36天 封板75.0%）</span>');
   else if(p._tier===2)warn.push('<span class="rtag info">二连板档·昨日2连板+高开4.3%~5.7%+竞价换手≥1.2%+市值40~80亿（270日 16样本 封板81.2%）</span>');
