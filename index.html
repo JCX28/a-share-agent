@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 16:52</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-19 16:59</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-19 16:52</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-19 16:59</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,7 +136,7 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
-      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。<br><b>竞价承接</b>：<b>竞价换手 &lt;1.03%</b> 直接剔除（20 日复盘：闸前 20 只 均 -0.23%/崩 45%，闸后 16 只 均 +1.82%/崩 25%）。<br><b>市场量能分档</b>（昨两市成交额/60日中位，9:26 可知）：仅<b>深度缩量（&lt;0.85）</b>时加严——竞价额须≥8000万，其余仅展示。<br><b>大额低开</b>：<b>竞价额 &gt;10000 万（1亿）且开盘涨幅 &lt;4.7%</b> 同时成立才剔除（大额却被压在低位开盘＝卖单出货，21 日复盘：均 +2.14%→+3.21%）。</div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。<br><b>竞价承接</b>：<b>竞价换手 &lt;1.03%</b> 直接剔除（20 日复盘：闸前 20 只 均 -0.23%/崩 45%，闸后 16 只 均 +1.82%/崩 25%）。<br><b>市场量能分档</b>（昨两市成交额/60日中位，9:26 可知）：仅<b>深度缩量（&lt;0.85）</b>时加严——竞价额须≥5000万，其余仅展示。<br><b>大额低开</b>：<b>竞价额 &gt;10000 万（1亿）且开盘涨幅 &lt;4.7%</b> 同时成立才剔除（大额却被压在低位开盘＝卖单出货，21 日复盘：均 +2.14%→+3.21%）。</div>
     </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
@@ -775,7 +775,7 @@ async function loadMktVol(){
     if(!(med>0&&y>0))return;
     const ratio=y/med;
     _volState={ratio,level:ratio>=1.15?'放量':ratio>=1.0?'温和':ratio>=0.85?'缩量':'深度缩量',
-               minAmt:ratio<0.85?8000:0};
+               minAmt:ratio<0.85?5000:0};
   }catch(e){}
 }
 function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPoolMap, drops, prevMap){
