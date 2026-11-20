@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-20 12:12</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-20 12:16</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-20 12:12</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-20 12:16</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -760,6 +760,7 @@ function themeEval(code, secToday, secPrev, ztMap, prevMap, hasPrev, indMap){ //
 // 市场量能（昨日两市成交额 / 前60日中位）：9:26 即可知（无前视），用于竞价强势分档收口
 let _volState={ratio:null,level:'未知',minAmt:0};
 async function loadMktVol(){
+  _volState={ratio:null,level:'未知',minAmt:0};   // 每次运行先清空：接口失败/数据不足时不得沿用上一次（可能是昨天）的比值
   try{
     const _p=n=>String(n).padStart(2,'0'), _dt=new Date();
     const today=_dt.getFullYear()+'-'+_p(_dt.getMonth()+1)+'-'+_p(_dt.getDate());
