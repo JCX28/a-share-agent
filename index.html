@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-20 14:47</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-20 15:08</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-20 14:47</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-20 15:08</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,7 +136,7 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
-      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。<br><b>竞价承接</b>：常规日 <b>竞价换手 &lt;1.03%</b> 直接剔除；<b>深度缩量日不设承接门槛</b>（仅保留 0.25% 最低活跃度，106 日扫描：深度日门槛 0→+0.63%、0.55→+0.43%、1.03→+0.22%，越低越好）。<br><b>市场量能分档</b>（昨两市成交额/60日中位，9:26 可知）：仅<b>深度缩量（&lt;0.85）</b>时加严——竞价额须≥3000万，其余仅展示。<br><b>大额低开</b>：<b>竞价额 &gt;20000 万（2亿）且开盘涨幅 &lt;4.7%</b> 同时成立才剔除（大额却被压在低位开盘＝卖单出货）。<br><b>流通市值全档 35~110 亿</b>（本地 498 天对照：不限 +0.02%、30亿 +0.10%、35亿 <b>+0.45%</b>、40亿 +0.23%、45亿 +0.22%）。</div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。<br><b>竞价承接</b>：常规日 <b>竞价换手 &lt;1.03%</b> 直接剔除；<b>深度缩量日不设承接门槛</b>（仅保留 0.25% 最低活跃度，106 日扫描：深度日门槛 0→+0.63%、0.55→+0.43%、1.03→+0.22%，越低越好）。<br><b>市场量能分档</b>（昨两市成交额/60日中位，9:26 可知）：仅<b>深度缩量（&lt;0.85）</b>时加严——竞价额须≥3000万，其余仅展示。<br><b>大额低开</b>：<b>竞价额 &gt;20000 万（2亿）且开盘涨幅 &lt;4.7%</b> 同时成立才剔除（大额却被压在低位开盘＝卖单出货）。<br><b>流通市值全档 35~110 亿</b>（本地 498 天对照：不限 +0.02%、30亿 +0.10%、35亿 <b>+0.45%</b>、40亿 +0.23%、45亿 +0.22%）。<br><b>不连续两天出同一只票</b>：上一交易日（取 9:26 自动存档或「记录选股」，10 个自然日内才算）已出过的票，今日从候选池剔除；回测代价 +0.45%→+0.35%、少 4 天有票，换掉的是"连板次日再追"的样本。</div>
     </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
@@ -796,6 +796,11 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
       return true;
     });
   }
+  // ★不连续两天出同一只票：上一交易日的竞价出票（9:26 自动存档优先，其次「记录选股」）今日不再入选
+  //   本地 498 天回测：只影响 19 天，均收益 +0.45%→+0.35%（少 4 天有票）；换来不追同一只连板
+  //   （20261103 澳洋健康 -1.16%、20261111 闽发铝业 -3.03% 这类"次日再出"）
+  const _excl=prevAuctionCodes();
+  if(_excl.size)cands=cands.filter(s=>!_excl.has(String(s.code).split('.')[0]));
   cands.forEach(s=>{ delete s._rk; delete s._noHi; delete s._std; delete s._tier; delete s._bx; }); // 每轮重置排序标记，避免上一轮标记残留（stocks 对象复用）
   const score=(s)=>{
     const km=klines[s.code]; const flow=flows[s.code]||0;
@@ -1638,6 +1643,21 @@ const pad2=n=>('0'+n).slice(-2);
 function todayKey(){const d=new Date();return ''+d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate());}
 function isTradingDay(d){const w=d.getDay();return w>=1&&w<=5;}
 function loadSnaps(){try{return JSON.parse(localStorage.getItem(SNAPKEY)||'[]')||[]}catch(e){return[]}}
+/* 上一交易日的竞价出票代码（用于「不连续两天出同一只票」）：
+   取「9:26 自动存档」与「记录选股」里日期 < 今天的最近一条；超过 10 个自然日视为非上一交易日，不启用 */
+function prevAuctionCodes(){
+  const today=todayKey(); const set=new Set(); let last='';
+  const take=(date,arr)=>{
+    if(!date||date>=today||!Array.isArray(arr))return;
+    if(date>last){last=date;set.clear();}
+    if(date===last)arr.forEach(x=>{if(x&&x.c)set.add(String(x.c).split('.')[0]);});
+  };
+  loadSnaps().forEach(x=>take(x.date,x.auction));
+  loadPickLog().forEach(x=>take(x.date,x.auction));
+  if(!last)return new Set();
+  const d=new Date(+last.slice(0,4),+last.slice(4,6)-1,+last.slice(6,8));
+  return (Date.now()-d.getTime()>10*864e5)?new Set():set;
+}
 function saveSnaps(a){try{localStorage.setItem(SNAPKEY,JSON.stringify(a))}catch(e){}}
 function maybeSaveSnap(s){
   const key=todayKey();
