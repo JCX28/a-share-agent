@@ -884,7 +884,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     const warmBand=(openGap>=2.4&&openGap<3.7);
     const gapHi60=(km&&km.hi60&&+s.open)?((+s.open/km.hi60-1)*100):null;
     // 2026-11-20 用户要求：L1 换手门槛改为按「市场量能比」判定——深度缩量(<0.85) 用 0.55%，其余 1.0%（原先按情绪判定，已取消）；同时去掉「贴60日高 gapHi60≥-3%」
-    const l1=(warmBand&&amtR>=(_volState.ratio<0.85?0.55:1.0)&&aucAmt>=2000&&fmc>0&&fmc<=110);
+    const l1=(warmBand&&amtR>=((_volState.ratio!=null&&_volState.ratio<0.85)?0.55:1.0)&&aucAmt>=2000&&fmc>0&&fmc<=110);
     const bxL=l1?1:0;
     // ★2026-11-12 缩量二板档 SW（备选第二层）：昨日2连板、昨日量比<1.0（缩量涨停）、高开4.3%~5.7%、竞价换手≥1.0%、竞价额≥2000万、市值40~80亿。
     //   200日回测：该形态 11样本 封板 90.9%、开→收+3.10%、崩1（唯一失败 2025-11-18 日上集团 -13.4%）；
@@ -958,7 +958,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   ★市场量能分档（176日回测：今日前3 仅换手闸 -0.03% → 量能分档 +0.34%、95天有票）：
     //    放量/温和/缩量(≥0.85) 保持原闸；仅深度缩量(<0.85) 竞价额须≥3000万（30日复盘：出票 14→17 只，均 +2.73%→+2.68%，崩 14%→12%）
     //   ★竞价额>2亿 且 开盘涨幅<4.7% → 硬剔（大额却在低位开盘 = 竞价被卖单压制/出货；1亿口径会误杀 11/11 002578，放宽到 2亿 30日 均+2.73%→+3.27%）
-    const trapBase=((openGap<2.4||(openGap<3.7&&bxL===0))||(openGap>5.7&&(openGap>7.7||(bxH===0&&!nBand)))||amtR<(_volState.ratio<0.85?0.25:1.03)||(fmc>0&&fmc>110)||(!hiGapBand&&gapHiBlock)||(_volState.minAmt>0&&aucAmt<_volState.minAmt)||(aucAmt>20000&&openGap<4.7));
+    const trapBase=((openGap<2.4||(openGap<3.7&&bxL===0))||(openGap>5.7&&(openGap>7.7||(bxH===0&&!nBand)))||amtR<((_volState.ratio!=null&&_volState.ratio<0.85)?0.25:1.03)||(fmc>0&&fmc>110)||(!hiGapBand&&gapHiBlock)||(_volState.minAmt>0&&aucAmt<_volState.minAmt)||(aucAmt>20000&&openGap<4.7));
     return {sc, openGap, vr, amtR, tier, bx, bxA, bxC, bxD, bxH, bxL, bxS, bxN:nBand?1:0, c10, aucAmt,
       trap:(trapBase||(!qual&&!hiGapBand&&bxL===0&&bxS===0&&noVolTrap)), weak:(!km&&openGap>2.5&&noKdata)};
   };
