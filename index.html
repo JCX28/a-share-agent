@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-20 11:43</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-20 11:53</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-20 11:43</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-20 11:53</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -883,7 +883,8 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   ★单独看各维度均无溢价：涨幅分档 5.7/8.3/11.6/17.1%、昨涨停单独 17.6%、贴60日高单独 16.2% —— 必须三条件同时满足。
     const warmBand=(openGap>=2.4&&openGap<3.7);
     const gapHi60=(km&&km.hi60&&+s.open)?((+s.open/km.hi60-1)*100):null;
-    const l1=(warmBand&&amtR>=1.0&&aucAmt>=2000&&gapHi60!=null&&gapHi60>=-3&&fmc>0&&fmc<=110);
+    // 情绪极弱(<0.3)时 L1 的竞价换手门槛 1.0%→0.55%（冰点日承接普遍稀薄，1.0% 会把 2.4~3.7% 温和低开档整段剔空）
+    const l1=(warmBand&&amtR>=(sentiment<0.3?0.55:1.0)&&aucAmt>=2000&&gapHi60!=null&&gapHi60>=-3&&fmc>0&&fmc<=110);
     const bxL=l1?1:0;
     // ★2026-11-12 缩量二板档 SW（备选第二层）：昨日2连板、昨日量比<1.0（缩量涨停）、高开4.3%~5.7%、竞价换手≥1.0%、竞价额≥2000万、市值40~80亿。
     //   200日回测：该形态 11样本 封板 90.9%、开→收+3.10%、崩1（唯一失败 2025-11-18 日上集团 -13.4%）；
