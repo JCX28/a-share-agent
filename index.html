@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-21 11:54</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-21 13:15</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-21 11:54</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-21 13:15</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -136,7 +136,7 @@
     <div class="group" id="gAuction">
       <div class="ghead"><span class="t-orange">竞价 · 强势确认（盘中剔除炸板）</span><span class="tagc orange" id="cAuction">0 / 2</span></div>
       <div class="picks" id="pAuction"><div class="empty">等待运行</div></div>
-      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。<br><b>竞价承接</b>：常规日 <b>竞价换手 &lt;1.03%</b> 直接剔除；<b>深度缩量日不设承接门槛</b>（仅保留 0.25% 最低活跃度，106 日扫描：深度日门槛 0→+0.63%、0.55→+0.43%、1.03→+0.22%，越低越好）。<br><b>市场量能分档</b>（昨两市成交额/60日中位，9:26 可知）：仅<b>深度缩量（&lt;0.85）</b>时加严——竞价额须≥3000万，其余仅展示。<br><b>大额低开</b>：<b>竞价额 &gt;20000 万（2亿）且开盘涨幅 &lt;4.7%</b> 同时成立才剔除（大额却被压在低位开盘＝卖单出货）。<br><b>流通市值全档 35~110 亿</b>（本地 498 天对照：不限 +0.02%、30亿 +0.10%、35亿 <b>+0.45%</b>、40亿 +0.23%、45亿 +0.22%）。</div>
+      <div class="note">竞价尾盘校验：9:20 后最高虚拟撮合价 → 9:25 成交价，回落<b>≥5pp</b> 视为假高开（抢筹已撤/大单出货），<b>选票前</b>直接从候选池剔除；首选档因此变空时，用剩余池继续走备选。<br><b>昨日弱板</b>：昨日<b>开板≥3次</b>的票直接剔除（反复炸板的弱板，次日高开多为兑现）。<br><b>竞价承接</b>：常规日 <b>竞价换手 &lt;1.03%</b> 直接剔除；<b>深度缩量日不设承接门槛</b>（仅保留 0.25% 最低活跃度，106 日扫描：深度日门槛 0→+0.63%、0.55→+0.43%、1.03→+0.22%，越低越好）。<br><b>市场量能分档</b>（昨两市成交额/60日中位，9:26 可知）：仅<b>深度缩量（&lt;0.85）</b>时加严——竞价额须≥3000万，其余仅展示。<br><b>大额低开</b>：<b>竞价额 &gt;20000 万（2亿）且开盘涨幅 &lt;4.7%</b> 同时成立才剔除（大额却被压在低位开盘＝卖单出货）。<br><b>流通市值全档 35~110 亿</b>（本地 498 天对照：不限 +0.02%、30亿 +0.10%、35亿 <b>+0.45%</b>、40亿 +0.23%、45亿 +0.22%）。<br><b>连板上限</b>：昨日<b>5 板及以上一律剔除</b>（首选/备选同规则）。本地 498 天：5板+ 共 20 笔、均 -0.77%，其中最早 90 天 10 笔均 -3.68%（最差 -14.2%）—— 加上限后前90/后400 超额由 -0.10%/+0.81% 收敛为 <b>+0.79%/+0.74%</b>，全样本日均 +0.68%→<b>+0.81%</b>、崩5 16.8%→15.7%。</div>
     </div>
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
@@ -829,7 +829,11 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //     封板 73.8%、开→收 +1.89%、崩盘15，前半 71.4% / 后半 76.2%（两段同向，非靠单一强市段）。
     //   ① 首板档   lbc=1 + 10日涨幅15~45% + 竞价换手≥0.70% + 竞价额≥1500万 + 市值≤80亿   → 单档 36天 75.0%
     //   ② 二连板档 lbc=2 + 高开4.3~5.7%（低开/平开不接第三板）+ 竞价换手≥1.2% + 市值40~80亿 → 单档 16样本 81.2%
-    //   ③ 高位连板档 lbc≥3 + 竞价换手≥0.70% + 竞价额≥3000万 + 市值≤110亿（要真金才接力）→ 单档 43天 69.8%
+    //   ③ 高位连板档 lbc 3~4 + 竞价换手≥0.70% + 竞价额≥3000万 + 市值≤110亿（要真金才接力）→ 单档 43天 69.8%
+    //   ★2026-11-21 全档加 lbc≤4 上限（原 lbc≥3 无上限）。本地 498 天：lbc≥5 共 20 笔 均 -0.77%，
+    //     前 90 天 10 笔 均 -3.68%（最差 -14.2%）把该段均值从 +0.95% 拉到 +0.06%；
+    //     加上限后 前90/后400 超额 +0.79% vs +0.74%（原 -0.10% vs +0.81%，两段由不一致转为一致），
+    //     全样本日均 +0.68%→+0.81%、崩5 16.8%→15.7%；代价仅后 400 天 -0.08pp（那里的 lbc≥5 恰好是赚的）。
     //   ④ 高置信档（①的子集，标注用）：10日涨幅35~45% + 竞价换手≥0.35% + 高开≤5.3% + 昨量比≥0.7 → 单档 8天 100%
     //   对照（270日）：只留首板档 36天 75.0%/+2.07%；首板+二连板+高位 82天 73.2%/+1.80%；首板+高位 70天 74.3%/+2.12%。
     //   代价：崩盘 15 天（18%），比只做首板档（7天/19%）多；换来的是有票天数从 39 → 84。
@@ -841,7 +845,7 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     //   加下限后：首选 79→75天、封板 63.3%→68.0%、开→收 +1.08%→+1.85%、崩盘 19→14；合计 149天 62.4%→63.1%。
     //   ★口径修正后（2026-11-12，gapHi 与线上统一为开盘价口径）：首选 65天/75.4%/+3.06/崩8，合计 139天/67.6%/+2.10。
     const lb2Conf=(lbc===2&&openGap>=4.3&&openGap<=5.7&&amtR>=1.2&&fmc>=40&&fmc<=80);                            // ② 二连板档
-    const lb3Conf=(lbc!=null&&lbc>=3&&openGap<=5.7&&amtR>=0.70&&aucAmt>=3000&&fmc>0&&fmc<=110);                   // ③ 高位连板档
+    const lb3Conf=(lbc!=null&&lbc>=3&&lbc<=4&&openGap<=5.7&&amtR>=0.70&&aucAmt>=3000&&fmc>0&&fmc<=110);          // ③ 高位连板档（3~4板）
     const qual=(hiConf||lb1Conf||lb2Conf||lb3Conf);
     const tier=hiConf?4:(lb1Conf?1:(lb2Conf?2:(lb3Conf?3:0)));
     // ★2026-11 备选重订（270日：2025-09-19~2026-11-11，tushare 竞价 × 3023只日K，无前视）。
@@ -970,7 +974,9 @@ function buildAuctionPicks(cands, klines, flows, hotSector, sentiment, n, ztPool
     // ★2026-11-20 全档加「流通市值≥35亿」下限（本地 498 天对照：不限 +0.02%、30亿 +0.10%、35亿 +0.45%、40亿 +0.23%、45亿 +0.22%；
     //   30~40亿区间整体最差 -1.59%，但 35 亿保留部分样本后综合最优，按用户决定采用 35 亿）。
     //   fmc 取不到(=0) 时 fail-open，避免数据层波动把整板剔空。
-    const trapBase=((openGap<2.4||(openGap<3.7&&bxL===0))||(openGap>5.7&&(openGap>7.7||(bxH===0&&!nBand)))||amtR<((_volState.ratio!=null&&_volState.ratio<0.85)?0.25:1.03)||(fmc>0&&(fmc>110||fmc<35))||(!hiGapBand&&gapHiBlock)||(_volState.minAmt>0&&aucAmt<_volState.minAmt)||(aucAmt>20000&&openGap<4.7));
+    //   ★2026-11-21 全档加「昨日连板≤4」上限（见上方 lb3Conf 注释）。5 板及以上一律不选（首选/备选同规则）；
+    //     lbc 取不到(null，K线缺失) 时 fail-open，避免数据层波动把整板剔空。
+    const trapBase=((lbc!=null&&lbc>4)||(openGap<2.4||(openGap<3.7&&bxL===0))||(openGap>5.7&&(openGap>7.7||(bxH===0&&!nBand)))||amtR<((_volState.ratio!=null&&_volState.ratio<0.85)?0.25:1.03)||(fmc>0&&(fmc>110||fmc<35))||(!hiGapBand&&gapHiBlock)||(_volState.minAmt>0&&aucAmt<_volState.minAmt)||(aucAmt>20000&&openGap<4.7));
     return {sc, openGap, vr, amtR, tier, bx, bxA, bxC, bxD, bxH, bxL, bxS, bxN:nBand?1:0, c10, aucAmt,
       trap:(trapBase||(!qual&&!hiGapBand&&bxL===0&&bxS===0&&noVolTrap)), weak:(!km&&openGap>2.5&&noKdata)};
   };
@@ -1130,7 +1136,7 @@ function auctionCard(p, rank, km){
   if(p._tier===4)warn.push('<span class="rtag ok">高置信·昨日首板+10日涨幅35%~45%+竞价换手≥0.35%+高开≤5.3%+昨量比≥0.7（270日 8天 封板100%）</span>');
   else if(p._tier===1)warn.push('<span class="rtag info">首板档·昨日首板+10日涨幅15%~45%+竞价换手≥0.70%+竞价额≥1500万+市值≤80亿（270日 36天 封板75.0%）</span>');
   else if(p._tier===2)warn.push('<span class="rtag info">二连板档·昨日2连板+高开4.3%~5.7%+竞价换手≥1.2%+市值40~80亿（270日 16样本 封板81.2%）</span>');
-  else if(p._tier===3)warn.push('<span class="rtag info">高位连板档·昨日≥3连板+竞价换手≥0.70%+竞价额≥3000万（270日 43天 封板69.8%）</span>');
+  else if(p._tier===3)warn.push('<span class="rtag info">高位连板档·昨日3~4连板+竞价换手≥0.70%+竞价额≥3000万（≥5连板已剔除；270日 43天 封板69.8%）</span>');
   // 高开≥5.1% 的票展示「跳空前高」幅度，让用户看到门槛在起作用（>3.4% 已被硬剔，此处只会出现达标值）
   if(ogNum>=5.1&&_gapHi!=null)warn.push(`<span class="rtag ${_gapHi>3.4?'danger':'mute'}">开盘较前20日最高价 ${_gapHi>0?'+':''}${_gapHi.toFixed(1)}%（需≤+3.4%）</span>`);
   if(p._weak)warn.push('<span class="rtag warn">K线数据不足·仅供参考</span>'); // 兜底：本轮上游取K线失败时的裸高开票，指标缺失，仅作参考
