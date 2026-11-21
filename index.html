@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-20 15:47</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-21 10:31</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-20 15:47</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-21 10:31</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -443,7 +443,9 @@ function klineMetrics(kl){
   // ★昨日上影线%（(昨高-昨收)/前日收盘）：盈利版块用，长上影＝昨日冲高失败、今日低开易被套
   const shadowY=(_pl&&_pc1>0&&+_pl.h>+_pl.c)?((+_pl.h-+_pl.c)/_pc1*100):null;
   return {price:last.c, vr, vrY, ma5, ma10, chg5, chg5Y, chg10, lbc, vol:last.v, yestChg, intraday, hi20, hi60, posy,
-    ampY, pos20, shadowY, broke5:last.c<ma5, broke10:last.c<ma10};
+    ampY, pos20, shadowY, broke5:last.c<ma5, broke10:last.c<ma10,
+    // ★昨日收盘价/昨日成交量（手）：恒取「不含今日」的 _pb，供承接比等 9:26 口径使用（last 可能含今日K线）
+    yVol:(_pb.length?_pb[_pb.length-1].v:null), yPrice:(_pb.length?_pb[_pb.length-1].c:null)};
 }
 /* ★选股两关注（用户口径）：
    ①题材新鲜度 themeEval：今日/昨日涨停池的板块家数对比 → 新启动(今日成梯队、昨日没起来) > 主线延续 > 退潮
@@ -494,10 +496,13 @@ function buildTrendPicks(cands, klines, flows, n, st){ // 非涨停 → 「选�
     //   425日无前视：单加此条 命中 42.6%→44.0%、崩 11.5%→10.8%；与「换手≥0.25%+②」叠加 45.1%/+1.18%/崩10.8%
     const _rLow=s=>{const m=klines[s.code]; if(!m||m.yestChg==null)return 0;
       if(m.yestChg<detectLimitPct(s.name)*0.97)return 0;
-      const yAmt=(+m.vol||0)*100*(+m.price||0), a=+s.amount||0;
+      // ★用「昨日」收盘价×昨日成交量算昨日成交额：last 可能含今日K线，直接用会把今日累计额当昨日额（承接比失效）
+      const yAmt=(+m.yVol||0)*100*(+m.yPrice||0), a=+s.amount||0;
       return (yAmt>0&&a>0&&a/yAmt<0.03)?1:0;};
-    return (_keep9.length?_keep9:cands).slice()
+    // ★去回退：全部被「儒意形态」剔完就空仓（原写法 _keep9.length?_keep9:cands 会把已剔的票又选回来，过滤失效）
+    const _keep9cand=_keep9.slice()
       .sort((a,b)=>((_rLow(a)?1:0)-(_rLow(b)?1:0))||((+b.amount||0)-(+a.amount||0))).slice(0,1);
+    return _keep9cand;
   }
   // 分时位置 / 现价vs均价（盘中实时字段，无前视）
   const dayPos=(s)=>{const hi=+s.high,lo=+s.low,pr=+s.trade; if(!(hi>lo)||!pr)return null; return (pr-lo)/(hi-lo);};
@@ -1315,9 +1320,14 @@ async function run(){
     //   回测（15分钟线，T→收盘）：选股时涨幅 0.5%~7% 内越强越好（6~7% 命中21.3%）；pos<0.2（砸盘）与 P/VWAP<0.98（承接差）为负期望 → 硬剔。
     let trendShort=stocks.filter(s=>{const l=detectLimitPct(s.name);
       if(/ST/.test(s.name))return false;
+      if(!isFinite(l)||l<=0)return false;                        // ★涨停价取不到 → fail-closed（原 chg>=NaN 恒 false，两道涨停闸静默失效）
       const chg=+s.changepercent||0;
       const hi=+s.high||0, lo=+s.low||0, pr=+s.trade||0, stl=+s.settlement||0;
-      const og=(+s.open&&stl)?((+s.open/stl-1)*100):0;
+      // ★9:26 竞价阶段新浪 open 可能为 0 → 原写法 fail-open 成 og=0，高开上限静默失效；
+      //   这里先用 open，取不到退到 trade（9:26 即竞价成交价），两者都没有则直接剔除（fail-closed）
+      const _op=(+s.open>0)?+s.open:(pr>0?pr:0);
+      if(!(stl>0&&_op>0))return false;
+      const og=(_op/stl-1)*100;
       // ★2026-11-14 高开上限 5.7%→1.5%：429日/20.3万行竞价回测，og≥3% 是稳定亏钱区
       //   （og 4~5% 日均 -0.58%/t=-5.85、5~5.7% -0.63%/t=-4.47，且 og 越大"当日大涨"命中率越高但收益越负=开盘已透支）；
       //   收紧到 1.5% 后（配竞价换手≥0.15% + 竞价额降序取1只）日均 +1.05%、t=4.29、剔最好10日仍 +0.85%
