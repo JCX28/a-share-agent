@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-21 11:23</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-21 11:54</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-21 11:23</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-21 11:54</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -141,7 +141,7 @@
     <div class="group" id="gTrend">
       <div class="ghead"><span class="t-blue">当日大涨 · 强势拉升（非涨停）</span><span class="tagc blue" id="cTrend">0 / 2</span><span class="tagc orange" id="sentiTrend" style="display:none"></span></div>
       <div class="picks" id="pTrend"><div class="empty">等待运行</div></div>
-      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标「此刻 → 收盘」仍明显上涨。剔除分时位置&lt;20%、现价/均价&lt;0.98、炸板票。排序 = 涨幅 + 分时位置 + 现价/均价 + 时间归一量比 + 昨日强弱，叠加<b>题材新鲜度</b>与<b>分时强度</b>。<b>9:26 竞价口径</b>：高开 0.5%~1.5%、竞价换手 <b>≥0.25%</b>、竞价额 ≥500万、不设市值上限（400 日：加 ≤300亿 反而 -0.07pp）、昨日跌幅 &gt;0.7% 剔除、连板≥4 剔除、<b>2 连板需「竞价换手 0.5~1.0% + 竞价量能≥4× + 大盘量能&lt;1.15」才保留</b>，按竞价额取 1 只；其中<b>昨日涨停但今日竞价额不足昨日成交额 3%</b>（昨放量、今无人承接）的排到最后。</div>
+      <div class="note">口径：选股时涨幅 0.5%~7%、未涨停，目标「此刻 → 收盘」仍明显上涨。剔除分时位置&lt;20%、现价/均价&lt;0.98、炸板票。排序 = 涨幅 + 分时位置 + 现价/均价 + 时间归一量比 + 昨日强弱，叠加<b>题材新鲜度</b>与<b>分时强度</b>。<b>9:26 竞价口径</b>：高开 0.5%~1.2%、竞价换手 <b>≥0.35%</b>、竞价额 ≥500万、不设市值上限（400 日：加 ≤300亿 反而 -0.07pp）、昨日跌幅 &gt;0.7% 剔除、连板≥4 剔除、<b>2 连板需「竞价换手 0.5~1.0% + 竞价量能≥4× + 大盘量能&lt;1.15」才保留</b>，按竞价额取 1 只；<b>大盘放量日（量能比≥1.15）本组空仓</b>（400 日：放量日 +0.12%/胜 46%、深度缩量日 +1.69%/胜 61%）；其中<b>昨日涨停但今日竞价额不足昨日成交额 3%</b>（昨放量、今无人承接）的排到最后。</div>
       <details class="dtl"><summary>回测依据</summary><div>主板×66日×15分钟，T时刻买入→收盘：全样本再涨≥2% 命中 9.7%，4~7% 组 17%~21%（6~7% 最高）。剔除分时位置&lt;20%（均值 -0.44%）、现价/均价&lt;0.98（-0.47%）、触板后炸板。模拟每日取 2 只：≥2% 命中 22%，平均收盘涨幅 5.56%（基准 2.43%）。</div></details>
     </div>
     <div class="group" id="gG5">
@@ -1331,13 +1331,16 @@ async function run(){
       // ★2026-11-14 高开上限 5.7%→1.5%：429日/20.3万行竞价回测，og≥3% 是稳定亏钱区
       //   （og 4~5% 日均 -0.58%/t=-5.85、5~5.7% -0.63%/t=-4.47，且 og 越大"当日大涨"命中率越高但收益越负=开盘已透支）；
       //   收紧到 1.5% 后（配竞价换手≥0.15% + 竞价额降序取1只）日均 +1.05%、t=4.29、剔最好10日仍 +0.85%
-      if(og>1.5)return false;
+      // ★2026-11-21 上限 1.5%→1.2%（B）：400日 9:26 回测，开幅 1.2~1.5% 档日均仅 +0.23%/胜 48.8%（最差档），
+      //   收紧后 出票 400→374 天、日均 +0.98%→+1.08%、胜 55.0%→57.0%
+      if(og>1.2)return false;
       // ★2026-11-14 两道竞价硬门槛（同池 429日）：竞价额<300万 日均 -0.15%/t=-2.74；竞价换手 0.15~0.25% 最优 +0.16%
       const _hs9=(+s.turnoverratio||0)||((+s.amount&&+s.nmc)?(+s.amount/(s.nmc*1e4)*100):0);
       if((+s.amount||0)<5e6)return false;                        // 竞价额 ≥500万
       // ★2026-11-19 门槛 0.15%→0.25%：425日无前视，换手<0.25% 段日均仅 +0.42%，收紧后
       //   出票 425→407 天、命中 42.6%→43.2%、日均 +0.87%→+1.09%
-      if(_hs9<0.25)return false;                                 // 竞价换手 ≥0.25%
+      // ★2026-11-21 换手下限 0.25%→0.35%（D）：400日回测，换手<0.35% 档日均仅 +0.08%/胜 40.9%（亏钱票里占 38%，赚钱票只占 21%）
+      if(_hs9<0.35)return false;                                 // 竞价换手 ≥0.35%
       if(!(chg>=0.5&&chg<=7))return false;                       // 已涨 0.5%~7%（留出到收盘的空间）
       if(chg>=l*0.93)return false;                               // 接近/触及涨停不选
       if(hi&&stl&&(hi/stl-1)*100>=l*0.95-0.01)return false;      // 盘中曾触及涨停（炸板/一字）不选
@@ -1542,6 +1545,14 @@ async function run(){
     });
     const _cutL2=_cntL2-trendShort.length;
     if(_cutL2>0)src.push('<li><span class="ok">✓</span> 2连板未达标 剔除 <b>'+_cutL2+'</b> 只（保留：竞价换手0.5~1.0% + 量能≥4× + 大盘&lt;1.15）</li>');
+    // ★2026-11-21 大盘放量日（量能比≥1.15）当日大涨组整体不出票（F）：
+    //   400日 9:26 回测按昨全天成交额口径：量能<0.85 日均 +1.69%/胜 61.1%、≥1.15 仅 +0.12%/胜 46.0%/崩≤-3% 27.8%（126 天）
+    //   B+D+F 合并：出票 400→214 天、日均 +0.98%→+1.92%、胜 55.0%→65.0%（2025 +0.62→+1.35、2026 +1.34→+2.51）
+    if(_volState&&_volState.ratio!=null&&_volState.ratio>=1.15){
+      const _cutV=trendShort.length;
+      trendShort=[];
+      if(_cutV)src.push('<li><span class="bad">✗</span> 大盘放量（量能 '+_volState.ratio.toFixed(2)+'≥1.15）当日大涨组空仓，剔除 <b>'+_cutV+'</b> 只</li>');
+    }
     let auctionPicks=buildAuctionPicks(auctionCands, klines, flows, ztSector, sentiment, nAucE+3, ztMap, _drops, prevMap);
     // 黄金5分钟（竞价放量）：开0~8% + 竞价换手>0.25% + 9:15→9:25 量能>2.5×
     let g5Picks=buildGolden5(fbShort, fbKlines, _drops, 3);
