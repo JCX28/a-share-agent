@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:28</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:30</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:28</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:30</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -111,6 +111,11 @@
       <h3>参数设置</h3>
       <div class="ctrl"><label>当日大涨潜力数（最多）</label><input type="number" id="nTrend" value="2" min="1" max="6"></div>
       <div class="ctrl"><label>T+1选股数（最多）</label><input type="number" id="nIntra" value="2" min="1" max="6"></div>
+      <div class="ctrl"><label>自动刷新（分）</label>
+        <select id="auto">
+          <option value="0">关闭</option><option value="1">1</option>
+          <option value="3" selected>3</option><option value="5">5</option>
+        </select></div>
       <button class="hbtn run" id="btnRun2" style="width:100%;margin-top:8px">执行实时选股</button>
       <button class="hbtn run" id="btnPickLog" style="width:100%;margin-top:8px">记录选股</button>
       <div class="status" id="status">就绪。</div>
@@ -1289,6 +1294,7 @@ function pickCard(p, rank, isLimit, km){
 const fmtW_b=(v)=>(typeof v==='number'&&isFinite(v))?(v/1e8).toFixed(2):'-';
 
 /* ================== 主流程 ================== */
+let timer=null;
 function setStatus(t,c){const el=$('#status');el.innerHTML=t;el.className='status '+c;}
 function running(on){$('#loading').style.display=on?'block':'none';$('#bar').style.display=on?'block':'none';}
 
@@ -1494,7 +1500,7 @@ async function run(){
     const flows=await fetchMainFlow(flowCands);
     const nf=Object.keys(flows).length;
     if(nf<10){
-      src.push('<li><span class="bad">⚠</span> 主力净流入接口当前受限（'+nf+'/'+flowCands.length+'），数值显示“—”，重新执行将重试</li>');
+      src.push('<li><span class="bad">⚠</span> 主力净流入接口当前受限（'+nf+'/'+flowCands.length+'），数值显示“—”，自动刷新将重试</li>');
     }else{
       src.push('<li><span class="ok">✓</span> 新浪资金流 <b>'+nf+'</b> 只（主力净流入）</li>');
     }
@@ -1686,16 +1692,12 @@ function guideText(){
 /* 事件 */
 $('#btnRun')?.addEventListener('click',run);
 $('#btnRun2')?.addEventListener('click',run);
+$('#auto')?.addEventListener('change',(e)=>{
+  if(timer)clearInterval(timer);
+  const mins=+e.target.value;
+  if(mins>0){timer=setInterval(run,mins*60000); setStatus('自动刷新：每'+mins+'分钟','');}
+});
 $('#btnHelp')?.addEventListener('click',()=>runHelp());
-// ★9:20~9:30 自动刷新（每 2 分钟一次）：只在这 10 分钟窗口内触发，其余时间保持手动。
-//   页面切到后台 / 上一次还没跑完时跳过，避免空跑抢东财配额。
-setInterval(()=>{
-  const n=new Date(), hm=n.getHours()*100+n.getMinutes();
-  if(!(hm>=920&&hm<=929))return;
-  if(document.hidden)return;
-  if($('#loading').style.display==='block')return;
-  run();
-},120000);
 function runHelp(){
   const m=$('#helpModal');
   m.style.display='flex';m.innerHTML=`<div style="background:#fff;border-radius:12px;max-width:760px;width:92%;max-height:86vh;overflow:auto;padding:24px;position:relative">
