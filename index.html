@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:12</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:22</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:12</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:22</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -113,8 +113,8 @@
       <div class="ctrl"><label>T+1选股数（最多）</label><input type="number" id="nIntra" value="2" min="1" max="6"></div>
       <div class="ctrl"><label>自动刷新（分）</label>
         <select id="auto">
-          <option value="0">关闭</option><option value="1">1</option>
-          <option value="3" selected>3</option><option value="5">5</option>
+          <option value="0">关闭</option><option value="1" selected>1</option>
+          <option value="3">3</option><option value="5">5</option>
         </select></div>
       <button class="hbtn run" id="btnRun2" style="width:100%;margin-top:8px">执行实时选股</button>
       <button class="hbtn run" id="btnPickLog" style="width:100%;margin-top:8px">记录选股</button>
@@ -1697,6 +1697,12 @@ $('#auto')?.addEventListener('change',(e)=>{
   const mins=+e.target.value;
   if(mins>0){timer=setInterval(run,mins*60000); setStatus('自动刷新：每'+mins+'分钟','');}
 });
+// 默认 1 分钟：打开页面即生效（仅 9:15~15:00 自动启动，避免盘前/盘后反复空跑占配额）
+(()=>{
+  const m=+($('#auto')?.value||0); if(!(m>0))return;
+  const now=new Date(), hm=now.getHours()*100+now.getMinutes();
+  if(hm>=915&&hm<=1500){timer=setInterval(run,m*60000); setStatus('自动刷新：每'+m+'分钟','');}
+})();
 $('#btnHelp')?.addEventListener('click',()=>runHelp());
 function runHelp(){
   const m=$('#helpModal');
