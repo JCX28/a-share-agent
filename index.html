@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:27</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:28</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:27</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:28</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -1687,7 +1687,7 @@ function guideText(){
 $('#btnRun')?.addEventListener('click',run);
 $('#btnRun2')?.addEventListener('click',run);
 $('#btnHelp')?.addEventListener('click',()=>runHelp());
-// ★9:20~9:30 自动刷新（每分钟一次）：只在这 10 分钟窗口内触发，其余时间保持手动。
+// ★9:20~9:30 自动刷新（每 2 分钟一次）：只在这 10 分钟窗口内触发，其余时间保持手动。
 //   页面切到后台 / 上一次还没跑完时跳过，避免空跑抢东财配额。
 setInterval(()=>{
   const n=new Date(), hm=n.getHours()*100+n.getMinutes();
@@ -1695,7 +1695,7 @@ setInterval(()=>{
   if(document.hidden)return;
   if($('#loading').style.display==='block')return;
   run();
-},60000);
+},120000);
 function runHelp(){
   const m=$('#helpModal');
   m.style.display='flex';m.innerHTML=`<div style="background:#fff;border-radius:12px;max-width:760px;width:92%;max-height:86vh;overflow:auto;padding:24px;position:relative">
