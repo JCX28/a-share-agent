@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:51</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:54</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:51</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:54</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -339,8 +339,8 @@ async function fetchAuctionDrop(codes){
   const HOSTS=['https://push2.eastmoney.com','https://push2delay.eastmoney.com'];
   const Q='?ut=fa5fd1943c7b386f172d6893dbfba10b&secid=';
   const TAIL='&fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&pos=-100000';
-  await poolRange(0, Math.max(0,todo.length-1), 1, async(i)=>{
-    if(i>0) await _slp(150+Math.random()*150);   // 串行 + 间隔，避免突发被判异常流量
+  await poolRange(0, Math.max(0,todo.length-1), 2, async(i)=>{
+    if(i>=2) await _slp(100);   // 并发 2 + 每条间隔 100ms：比串行快一倍，仍远低于被判异常的速率
     const c=todo[i], sec=(/^6/.test(c)?'1.':'0.')+c;
     _req++;
     let d=null;
