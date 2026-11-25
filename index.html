@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-24 10:54</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-25 12:58</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-24 10:54</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-25 12:58</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -1569,6 +1569,12 @@ async function run(){
     const _drops=await fetchAuctionDrop(Array.from(new Set([...auctionCands.map(s=>s.code),..._g5Need,..._lb2Codes])));
     const _pathN=Object.keys(_drops).length, _reqN=(_dropsStat&&_dropsStat.req)||_pathN, _hitN=(_dropsStat&&_dropsStat.hit)||0, _pathOk=_reqN===0?true:(_pathN>=_reqN*0.6);
     src.push('<li><span class="'+(_pathOk?'ok':'bad')+'">'+(_pathOk?'✓':'⚠')+'</span> 竞价路径 <b>'+_pathN+'/'+(_reqN+_hitN)+'</b>（成功/请求'+( _hitN?'，其中缓存 '+_hitN:'')+'；9:15→9:25 价格/量能曲线，盈利版块硬依赖）</li>');
+    // ★2026-11-25：单独统计「黄金5分钟」的 vAll 覆盖。vAll 是唯一的硬依赖，覆盖不足时本档必空仓，
+    //   因此把覆盖数直接暴露出来（9:25~9:29 的自动补跑据此判断是否继续重试）。
+    const _g5covN=_g5Need.filter(c=>{const o=_drops[c]; return !!(o&&o.vAll!=null);}).length;
+    const _g5covOk=_g5Need.length===0||_g5covN>=Math.ceil(_g5Need.length*0.6);
+    window.__g5cov={need:_g5Need.length,ok:_g5covN};
+    src.push('<li><span class="'+(_g5covOk?'ok':'bad')+'">'+(_g5covOk?'✓':'⚠')+'</span> 黄金5分钟 vAll 覆盖 <b>'+_g5covN+'/'+_g5Need.length+'</b>（>2.5倍量能关可用票数；覆盖<60% 时本档大概率空仓）</li>');
     const _badAuc=code=>{const o=_drops[code]; return !!(o&&o.dd!=null&&o.dd>=5);};
     const _cutA=auctionCands.filter(s=>_badAuc(s.code)).length, _cutF=fbShort.filter(s=>_badAuc(s.code)).length;
     auctionCands=auctionCands.filter(s=>!_badAuc(s.code));
@@ -1712,6 +1718,29 @@ $('#auto')?.addEventListener('change',(e)=>{
   const mins=+e.target.value;
   if(mins>0){timer=setInterval(run,mins*60000); setStatus('自动刷新：每'+mins+'分钟','');}
 });
+/* ★2026-11-25 9:25~9:29 自动补跑（东财逐笔限流兜底）
+   规则：窗口内最多 3 轮、每轮间隔 ≥2 分钟；vAll 覆盖达标（≥60%）即停，不覆盖正式结果。
+   理由：黄金5分钟唯一硬依赖是东财 9:15→9:25 逐笔，整批失败会空仓；当日缓存让二次重跑只补失败项。 */
+let __g5rt={day:'',round:0,ts:0,ok:false};
+setInterval(async ()=>{
+  const d=new Date(), hm=d.getHours()*100+d.getMinutes();
+  if(hm<925||hm>929)return;                                  // 仅 9:25~9:29
+  if($('#loading').style.display==='block')return;            // 上一轮未结束
+  const day=d.toDateString();
+  if(__g5rt.day!==day)__g5rt={day:day,round:0,ts:0,ok:false};
+  if(__g5rt.ok||__g5rt.round>=3)return;
+  if(Date.now()-__g5rt.ts<110000)return;                       // 每 2 分钟一轮
+  __g5rt.round++; __g5rt.ts=Date.now();
+  setStatus('9:26 补跑第 '+__g5rt.round+' 轮（逐笔失败重试）…','');
+  try{await run();}catch(e){}
+  const c=window.__g5cov||{need:0,ok:0};
+  if(c.need===0||c.ok>=Math.ceil(c.need*0.6)){
+    __g5rt.ok=true;
+    setStatus('9:26 结果已锁定（vAll 覆盖 '+c.ok+'/'+c.need+'）','ok');
+  }else if(__g5rt.round>=3){
+    setStatus('9:26 补跑 3 轮已用完，vAll 覆盖 '+c.ok+'/'+c.need+'，本档可能空仓','');
+  }
+},20000);
 $('#btnHelp')?.addEventListener('click',()=>runHelp());
 function runHelp(){
   const m=$('#helpModal');
