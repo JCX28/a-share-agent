@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-25 14:44</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-25 17:26</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-25 14:44</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-25 17:26</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -1570,7 +1570,11 @@ async function run(){
       if(!(amtR>0.25))return false;
       return true;
     }).map(s=>s.code);
-    const _drops=await fetchAuctionDrop(Array.from(new Set([...auctionCands.map(s=>s.code),..._g5Need,..._lb2Codes])));
+    // ★2026-11-25：竞价强势档只对「排名靠前 30 只」抓逐笔（按竞价换手降序，与正式排序同向）。
+    //   排名靠后的候选跳过逐笔检查（缺失本就放行，见 _badAuc），把东财逐笔从约 70 条压到 30 条，
+    //   降低竞价时段整批超时的概率。
+    const _aucTop30=auctionCands.slice().sort((a,b)=>_aucAmtR(b)-_aucAmtR(a)).slice(0,30).map(s=>s.code);
+    const _drops=await fetchAuctionDrop(Array.from(new Set([..._aucTop30,..._g5Need,..._lb2Codes])));
     const _pathN=Object.keys(_drops).length, _reqN=(_dropsStat&&_dropsStat.req)||_pathN, _hitN=(_dropsStat&&_dropsStat.hit)||0, _pathOk=_reqN===0?true:(_pathN>=_reqN*0.6);
     src.push('<li><span class="'+(_pathOk?'ok':'bad')+'">'+(_pathOk?'✓':'⚠')+'</span> 竞价路径 <b>'+_pathN+'/'+(_reqN+_hitN)+'</b>（成功/请求'+( _hitN?'，其中缓存 '+_hitN:'')+'；9:15→9:25 价格/量能曲线，盈利版块硬依赖）</li>');
     // ★2026-11-25：单独统计「黄金5分钟」的 vAll 覆盖。vAll 是唯一的硬依赖，覆盖不足时本档必空仓，
