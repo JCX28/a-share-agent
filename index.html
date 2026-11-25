@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-25 12:58</title>
+<title>A股实时选股智能体 · 鹤老大模式 · 2026-11-25 14:13</title>
 <style>
   :root{
     --red:#d92d20; --green:#0f7b3f; --blue:#2563eb; --orange:#b54708;
@@ -96,7 +96,7 @@
 <body>
 
 <header>
-  <h1>A股实时选股智能体<em class="hver">2026-11-25 12:58</em></h1>
+  <h1>A股实时选股智能体<em class="hver">2026-11-25 14:13</em></h1>
   <span class="sub">主板强势·龙头·人气模式 · 已排除 科创板/创业板</span>
   <div class="spacer"></div>
   <button class="hbtn run" id="btnRun">执行实时选股</button>
@@ -145,7 +145,7 @@
       <details class="dtl"><summary>回测依据</summary><div>主板×66日×15分钟，T时刻买入→收盘：全样本再涨≥2% 命中 9.7%，4~7% 组 17%~21%（6~7% 最高）。剔除分时位置&lt;20%（均值 -0.44%）、现价/均价&lt;0.98（-0.47%）、触板后炸板。模拟每日取 2 只：≥2% 命中 22%，平均收盘涨幅 5.56%（基准 2.43%）。</div></details>
     </div>
     <div class="group" id="gG5">
-      <div class="ghead"><span class="t-orange">黄金5分钟（竞价放量）</span><span class="tagc orange" id="cG5">0 / 3</span></div>
+      <div class="ghead"><span class="t-orange">黄金5分钟（竞价放量）</span><span class="tagc orange" id="cG5">0 / 3</span><span class="tagc" id="covG5" style="display:none"></span></div>
       <div class="picks" id="pG5"><div class="empty">等待运行</div></div>
       <div class="note">口径（GitHub/通达信流传最广的「黄金5分钟」竞价公式）：竞价涨幅 <b>0%~8%</b> + 竞价换手 <b>&gt;0.25%</b> + 9:15→9:25 竞价量能 <b>&gt;2.5×</b>；通用：竞价额 ≥300 万、流通 ≤300 亿、尾盘跳水≥4pp 剔除。按<b>竞价涨幅升序</b>取 3 只。买点=9:25 集合竞价成交价（即开盘价），目标当日收盘。</div>
       <details class="dtl"><summary>回测依据（无前视）</summary><div><b>177 日（20260302~20261118，含量能曲线）</b>：310 只/152 天，均 <b>+0.79%</b>、涨≥1.5% <b>40.6%</b>、崩盘(≤-3%) 20.6%、T+1 择高卖 +2.03%；约 25 天无票。<b>427 日（20250205~20261111，缺量能曲线，用「竞价额/昨日成交额」代理）</b>：换手&gt;0.25% 均 +0.28%；换手&gt;0.5% 均 <b>+0.50%</b>、涨≥1.5% 43.2%、崩盘 31.3%，前后半段 +0.49%/+0.50% 稳定。<b>结论：能赚但崩盘率高，必须止损。</b></div></details>
@@ -1570,11 +1570,19 @@ async function run(){
     const _pathN=Object.keys(_drops).length, _reqN=(_dropsStat&&_dropsStat.req)||_pathN, _hitN=(_dropsStat&&_dropsStat.hit)||0, _pathOk=_reqN===0?true:(_pathN>=_reqN*0.6);
     src.push('<li><span class="'+(_pathOk?'ok':'bad')+'">'+(_pathOk?'✓':'⚠')+'</span> 竞价路径 <b>'+_pathN+'/'+(_reqN+_hitN)+'</b>（成功/请求'+( _hitN?'，其中缓存 '+_hitN:'')+'；9:15→9:25 价格/量能曲线，盈利版块硬依赖）</li>');
     // ★2026-11-25：单独统计「黄金5分钟」的 vAll 覆盖。vAll 是唯一的硬依赖，覆盖不足时本档必空仓，
-    //   因此把覆盖数直接暴露出来（9:25~9:29 的自动补跑据此判断是否继续重试）。
+    //   因此把覆盖数直接挂在板块标题后面（9:25~9:29 的自动补跑据此判断是否继续重试）。
     const _g5covN=_g5Need.filter(c=>{const o=_drops[c]; return !!(o&&o.vAll!=null);}).length;
     const _g5covOk=_g5Need.length===0||_g5covN>=Math.ceil(_g5Need.length*0.6);
     window.__g5cov={need:_g5Need.length,ok:_g5covN};
-    src.push('<li><span class="'+(_g5covOk?'ok':'bad')+'">'+(_g5covOk?'✓':'⚠')+'</span> 黄金5分钟 vAll 覆盖 <b>'+_g5covN+'/'+_g5Need.length+'</b>（>2.5倍量能关可用票数；覆盖<60% 时本档大概率空仓）</li>');
+    const _covEl=$('#covG5');
+    if(_covEl){
+      if(_g5Need.length){
+        _covEl.style.display='';
+        _covEl.textContent='vAll 覆盖 '+_g5covN+'/'+_g5Need.length+(_g5covOk?'':' ⚠ 可能空仓');
+        _covEl.style.background=_g5covOk?'#ecfdf3':'#fef3f2';
+        _covEl.style.color=_g5covOk?'#067647':'#b42318';
+      }else{_covEl.style.display='none';}
+    }
     const _badAuc=code=>{const o=_drops[code]; return !!(o&&o.dd!=null&&o.dd>=5);};
     const _cutA=auctionCands.filter(s=>_badAuc(s.code)).length, _cutF=fbShort.filter(s=>_badAuc(s.code)).length;
     auctionCands=auctionCands.filter(s=>!_badAuc(s.code));
